@@ -9,7 +9,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 🤖 機能1: ロボットの発話（音声合成）用のJavaScript
+# 🤖 ロボットの発話（音声合成）用のJavaScript
 def robot_speak(text):
     if text:
         js_code = f"""
@@ -25,7 +25,7 @@ def robot_speak(text):
         """
         st.components.v1.html(js_code, height=0, width=0)
 
-# 🎙️ 機能2: 【完全ハンズフリー対応】音声認識用コンポーネント
+# 🎙️ 【Reactバグ修正版】ハンズフリー音声認識用コンポーネント
 def hands_free_speech_component():
     html_code = """
     <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
@@ -41,7 +41,6 @@ def hands_free_speech_component():
             display: flex;
             align-items: center;
             gap: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             width: 100%;
             justify-content: center;
         ">
@@ -65,7 +64,6 @@ def hands_free_speech_component():
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             
-            // 🔥 ここがポイント：単発ではなく、ずっと聞き流しを続ける設定に
             recognition.continuous = true; 
             recognition.interimResults = false;
             recognition.lang = 'ja-JP';
@@ -86,25 +84,31 @@ def hands_free_speech_component():
             };
 
             recognition.onresult = (event) => {
-                // 最新の認識結果を取得
                 const resultIndex = event.resultIndex;
                 const text = event.results[resultIndex][0].transcript.trim();
                 statusSpan.innerHTML = "🗣️ 最後に聞き取った言葉: 「<b>" + text + "</b>」";
 
-                // 特定のキーワードが含まれているか判定してStreamlitを動かす
-                if (text.includes("スタート") || text.includes("開始") || text.includes("次") || text.includes("できた") || text.includes("リセット") || text.includes("最初から")) {
+                if (text.includes("スタート") || text.includes("開始") || text.includes("次") || text.includes("できた") || text.includes("おk") || text.includes("リセット") || text.includes("最初から")) {
                     try {
                         const parentDoc = window.parent.document;
                         const chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
                         
                         if (chatInput) {
-                            chatInput.value = text;
+                            // 🌟【最重要修正】Reactの入力監視を強制的に騙して値を認識させる特殊な処理
+                            const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                            nativeTextAreaValueSetter.call(chatInput, text);
+                            
+                            // 変更イベントを発火してStreamlitに通知
                             chatInput.dispatchEvent(new Event('input', { bubbles: true }));
                             
+                            // 確実に内部状態が更新された一瞬後に送信ボタンをクリック
                             setTimeout(() => {
                                 const sendBtn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-                                if (sendBtn) { sendBtn.click(); }
-                            }, 200);
+                                if (sendBtn) { 
+                                    sendBtn.removeAttribute('disabled'); // ボタンの無効化を強制解除
+                                    sendBtn.click(); 
+                                }
+                            }, 100);
                         }
                     } catch (e) {
                         console.error("Streamlitへのデータ送信に失敗:", e);
@@ -118,11 +122,9 @@ def hands_free_speech_component():
                 }
             };
 
-            // 🔥 調理中、沈黙が続いてもマイクが勝手に切れないように自動再起動する
             recognition.onend = () => {
                 isListening = false;
                 if (micBtn.style.backgroundColor !== "rgb(46, 125, 50)") { 
-                    // ユーザーが手動で止めにきていない場合は再起動
                     recognition.start();
                 } else {
                     statusSpan.innerText = "状態: 停止中";
@@ -205,17 +207,15 @@ with col_left:
         st.metric("メイン調味料（比率）", f"{round(2.0 * ratio, 2)} 大さじ")
         st.metric("必要水分量", f"{round(200 * ratio, 1)} ml")
 
-# 【右カラム】対話型ロボットウインドウ（ハンズフリーメイン）
+# 【右カラム】対話型ロボットウインドウ
 with col_right:
     st.subheader("💬 2. 声だけで進める調理ナビ")
     
-    # 🌟 完全ハンズフリー音声コンポーネントを配置
     hands_free_speech_component()
     
     chat_placeholder = st.container()
     user_message = None
 
-    # チャット入力欄（声がここに自動で入る。もちろん手入力も可能）
     if chat_input := st.chat_input("ココに話しかけるか、文字を入力してね"):
         user_message = chat_input
 
