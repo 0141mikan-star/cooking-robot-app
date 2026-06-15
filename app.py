@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# ページ全体のデザイン設定
+# 1. ページ全体のデザイン設定
 st.set_page_config(
     page_title="次世代対話型自炊ロボット「ココ」",
     page_icon="🤖",
@@ -25,7 +25,7 @@ def robot_speak(text):
         """
         st.components.v1.html(js_code, height=0, width=0)
 
-# 🎙️ ハンズフリー音声認識用コンポーネント（React対策版）
+# 🎙️ ハンズフリー音声認識用コンポーネント
 def hands_free_speech_component():
     html_code = """
     <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
@@ -88,7 +88,6 @@ def hands_free_speech_component():
                 const text = event.results[resultIndex][0].transcript.trim();
                 statusSpan.innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
 
-                // すべての発話をStreamlitのチャット入力欄に流し込む（裏側の判定器で意図を解析するため）
                 try {
                     const parentDoc = window.parent.document;
                     const chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
@@ -132,11 +131,8 @@ def hands_free_speech_component():
     """
     st.components.v1.html(html_code, height=120)
 
-# --- 🧠 意図解釈（インテント識別）エンジンのシミュレータ ---
+# --- 🧠 意図解釈（インテント識別）エンジン ---
 def parse_user_intent(user_message):
-    """
-    ユーザーの自由な発話から、意図（インテント）を解釈して分類するNLPモジュールのシミュレータ
-    """
     msg = user_message.lower()
     
     # 1. 次に進める意図の解釈（多様な表現に対応）
@@ -159,28 +155,21 @@ def parse_user_intent(user_message):
     if any(k in msg for k in reset_keywords):
         return "RESET_COOKING"
         
-    # 5. どれにも当てはまらない場合は「質問・雑談」として扱う
     return "CHAT_OR_QUESTION"
 
-
-# --- 🍳 食材の調理特性（常識）を考慮した複数レシピ動的生成エンジン ---
+# --- 🍳 食材の調理特性（常識）を考慮した動的生成エンジン ---
 def generate_intelligent_recipes(ingredients_list):
     if not ingredients_list:
         return {}
         
     main_item = ingredients_list[0]
     sub_items_clean = "、".join(ingredients_list[1:]) if len(ingredients_list) > 1 else main_item
-    
-    # 食材リスト全体に「卵」が含まれているかをチェック（常識判定フラグ）
     has_egg = any("卵" in item for item in ingredients_list)
-    
     recipes = {}
     
-    # --- 提案1: 炒め物系 ---
+    # 提案1: 炒め物系
     r1_name = f"🍳 AI特製：{main_item}のおかずスタミナ炒め"
-    r1_steps = []
     if has_egg:
-        # 🌟 卵がある場合の「常識的」な炒め物手順
         r1_steps = [
             f"ステップ1：まずは卵の処理から！フライパンに油を強火で熱して、溶いた卵を一気に入れよう。半熟状になったら、一度お皿に取り出してね。できたら声をかけて！",
             f"ステップ2：同じフライパンで【{main_item}】と【{sub_items_clean}】（卵以外）を中火でしっかり炒めていこう。終わったら次何するか聞いてね。",
@@ -198,11 +187,9 @@ def generate_intelligent_recipes(ingredients_list):
         "steps": r1_steps
     }
     
-    # --- 提案2: スープ・煮込み系 ---
+    # 提案2: スープ・煮込み系
     r2_name = f"🍲 AI特製：あったか{main_item}のとろみ中華スープ煮"
-    r2_steps = []
     if has_egg:
-        # 🌟 卵がある場合の「常識的」なスープ・煮込み手順（絶対に最初からは煮込まない）
         r2_steps = [
             f"ステップ1：鍋に【お水と鶏ガラスープの素】を入れて沸騰させよう。その間に【{main_item}】などの具材を一口大に切ってね。できたら教えて！",
             f"ステップ2：鍋に切った具材（※卵以外！）を入れて、具材が柔らかくなるまで中火でコトコト煮込むよ。煮込み終わったら次へ進もう。",
@@ -226,14 +213,14 @@ def generate_intelligent_recipes(ingredients_list):
 if 'base_ingredients' not in st.session_state:
     st.session_state['base_ingredients'] = pd.DataFrame([
         {"食材名": "豚肉", "量": 120.0, "単位": "g"},
-        {"食材名": "卵", "量": 2.0, "単位": "個"} # 初期値に卵を配置
+        {"食材名": "卵", "量": 2.0, "単位": "個"}
     ])
 if 'generated_recipes' not in st.session_state:
     st.session_state['generated_recipes'] = {}
 if 'suggested_options' not in st.session_state:
     st.session_state['suggested_options'] = []
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！新しくなったココだよ。左側の食材リストを自由に編集して、『料理を複数提案してもらう』ボタンを押してね。今度は料理の常識や、自由な話し言葉にもしっかり耳を傾けるよ！"}]
+    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！左側の食材リストを自由に編集して、『料理を複数提案してもらう』ボタンを押してね。料理の常識や、自由な話し言葉にもしっかり対応するよ！"}]
 if 'current_step' not in st.session_state:
     st.session_state['current_step'] = -1  
 if 'calculated' not in st.session_state:
@@ -241,19 +228,22 @@ if 'calculated' not in st.session_state:
 if 'latest_reply' not in st.session_state:
     st.session_state['latest_reply'] = None
 
-# --- UI配置 ---
-st.title("🤖 次世代対話型自炊ロボット『ココ』")
-st.caption("⚡ Kumamoto University - Information Fusion / Interactive Intent Recognition & Domain Knowledge Upgrade")
-st.markdown("---")
+# --- サイドバーの定義（常に一番外側のスコープに配置） ---
+st.sidebar.header("👤 ユーザー状態の識別")
+user_name = st.sidebar.text_input("ユーザー名", value="もっち")
+motivation = st.sidebar.slider("料理モチベーション", 1, 5, 3)
+target_servings = st.sidebar.number_input("作りたい人数 (人前)", min_value=0.1, max_value=4.0, value=1.0, step=0.1)
 
+mode = "support" if motivation <= 2 else "active"
+
+# --- 画面構成（左右２カラム） ---
 col_left, col_right = st.columns([1, 1.2])
 
 # 【左カラム】食材入力
 with col_left:
-    st.subheader("📥 1. 冷蔵庫の食材入力 ＆ AI複数提案")
+    st.subheader("📥 1. 冷蔵庫 of 食材入力 ＆ AI複数提案")
     st.markdown("**【手順A】手持ちの食材を入力・編集する**")
     
-    # バグの出ない安定型エディタ
     edited_ingredients = st.data_editor(
         st.session_state['base_ingredients'], 
         num_rows="dynamic", 
@@ -283,7 +273,7 @@ with col_left:
     st.markdown("**【手順C】提案された選択肢から料理を選んで最適化する**")
     selected_recipe = st.selectbox("ココのおススメ料理選択肢", st.session_state['suggested_options'])
     
-    if st.button("✨ 【手順D】選んだ料理の調味料比率を計算する", type="primary", use_container_width=True):
+    if st.button("✨ 【手順D】この料理の調味料比率を計算する", type="primary", use_container_width=True):
         if not selected_recipe:
             st.error("⚠️ まずは【手順B】のボタンを押してね！")
         else:
@@ -299,14 +289,14 @@ with col_left:
 
     if st.session_state['calculated'] and 'current_recipe_data' in st.session_state:
         st.markdown("---")
-        recipe = st.session_state['current_recipe_data']
         st.markdown(f"#### 📊 {target_servings}人前の最適化調味料比率")
+        recipe = st.session_state['current_recipe_data']
         ratio = target_servings / 2.0
         for name, base_val in recipe["condiments"].items():
             calc_val = round(float(base_val) * ratio, 2)
             st.write(f"・{name}: **{calc_val}** 大さじ")
 
-# 【右カラム】対話型ロボットウインドウ（インテント識別駆動）
+# 【右カラム】対話型ロボットウインドウ
 with col_right:
     st.subheader("💬 2. 声だけで進める調理ナビ（自由対話対応）")
     
@@ -326,7 +316,6 @@ with col_right:
             steps = st.session_state['current_recipe_data']["steps"]
             current = st.session_state['current_step']
             
-            # 🌟 ユーザーの自由な言葉から「意図（インテント）」を識別
             intent = parse_user_intent(user_message)
             
             if intent == "START_COOKING":
@@ -355,7 +344,6 @@ with col_right:
                 reply = "調理手順を最初からリセットしたよ。準備ができたら『開始するよ』などと言ってね。"
                 
             else:
-                # 🌟 意図が「質問や雑談」だった場合の動的相槌ロジック（ロボットらしい振る舞い）
                 if "火" in user_message or "火力" in user_message:
                     reply = "基本的には中火で大丈夫だよ！焦げそうだったら少し弱めて、ココに『次』って教えてね。"
                 elif "卵" in user_message:
