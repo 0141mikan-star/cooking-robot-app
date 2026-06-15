@@ -4,7 +4,7 @@ import numpy as np
 
 # ページ全体のデザイン設定
 st.set_page_config(
-    page_title="複数動的提案ロボット「ココ」",
+    page_title="完全ハンズフリー自炊ロボット「ココ」",
     page_icon="🤖",
     layout="wide"
 )
@@ -135,20 +135,16 @@ def hands_free_speech_component():
     """
     st.components.v1.html(html_code, height=120)
 
-# --- 🧠 複数レシピ動的自動生成エンジン 🧠 ---
+# --- 🧠 複数レシピ動的自動生成エンジン ---
 def generate_multiple_dynamic_recipes(ingredients_list):
-    """
-    どんな未知の食材リストからでも、3パターンの異なる料理提案をその場で自動生成する
-    """
     if not ingredients_list:
         return {}
-        
     main_item = ingredients_list[0]
     sub_items_clean = "、".join(ingredients_list[1:]) if len(ingredients_list) > 1 else main_item
     
     recipes = {}
     
-    # 提案1：炒め物・おかず系
+    # 提案1
     r1_name = f"🍳 AI創作：{main_item}の旨辛スタミナ炒め"
     recipes[r1_name] = {
         "condiments": {"醤油": "2.0", "みりん": "1.0", "酒": "1.0", "砂糖": "0.5", "おろしニンニク": "0.5"},
@@ -158,8 +154,7 @@ def generate_multiple_dynamic_recipes(ingredients_list):
             f"ステップ3：仕上げに、左に表示されている最適化された【醤油やみりんのタレ】を一気に回し入れて、強火でサッと絡めたら完成だよ！"
         ]
     }
-    
-    # 提案2：ご飯物・どんぶり系
+    # 提案2
     r2_name = f"🍚 AI創作：具だくさん{main_item}特製パラパラチャーハン"
     recipes[r2_name] = {
         "condiments": {"醤油": "1.0", "塩コショウ": "少々", "ごま油": "1.0", "鶏ガラスープの素": "1.0"},
@@ -169,8 +164,7 @@ def generate_multiple_dynamic_recipes(ingredients_list):
             f"ステップ3：仕上げに【鶏ガラスープの素】を振り、鍋肌から醤油を回し入れてサッと炒めたら完成！"
         ]
     }
-    
-    # 提案3：スープ・煮込み系
+    # 提案3
     r3_name = f"🍲 AI創作：あったか{main_item}の中華風とろみスープ煮"
     recipes[r3_name] = {
         "condiments": {"お水": "300.0", "鶏ガラスープの素": "1.5", "醤油": "0.5", "ごま油": "0.5", "片栗粉(とろみ用)": "1.0"},
@@ -180,13 +174,15 @@ def generate_multiple_dynamic_recipes(ingredients_list):
             f"ステップ3：水溶き片栗粉でとろみをつけて、仕上げにごま油を少し垂らしたら完成だよ！"
         ]
     }
-    
     return recipes
 
-# --- セッション状態（記憶）の初期化 ---
-if 'ingredients_data' not in st.session_state:
-    st.session_state['ingredients_data'] = pd.DataFrame([
-        {"食材名": "豚肉", "量": 120.0, "単位": "g"}
+# --- 🌟 セッション状態（記憶）の初期化 🌟 ---
+if 'base_ingredients' not in st.session_state:
+    # 1. マスターとなる初期配置データフレーム（ここを固定の起点にします）
+    st.session_state['base_ingredients'] = pd.DataFrame([
+        {"食材名": "豚肉", "量": 120.0, "単位": "g"},
+        {"食材名": "玉ねぎ", "量": 0.5, "単位": "個"},
+        {"食材名": "人参", "量": 0.3, "単位": "本"}
     ])
 if 'generated_recipes' not in st.session_state:
     st.session_state['generated_recipes'] = {}
@@ -203,7 +199,7 @@ if 'latest_reply' not in st.session_state:
 
 # --- ヘッダー領域 ---
 st.title("🤖 完全動的・複数提案自炊サポートロボット『ココ』")
-st.caption("⚡ Kumamoto University - Information Fusion / Multi-Recipe Generation Update")
+st.caption("⚡ Kumamoto University - Information Fusion / Lifecycle Bug Fixed")
 st.markdown("---")
 
 # --- サイドバー：ユーザー状態の識別 ---
@@ -217,33 +213,32 @@ mode = "support" if motivation <= 2 else "active"
 # --- 画面構成（左右２カラム） ---
 col_left, col_right = st.columns([1, 1.2])
 
-# 【左カラム】食材入力と複数動的提案
+# 【左カラム】食材入力
 with col_left:
     st.subheader("📥 1. 冷蔵庫の食材入力 ＆ AI複数提案")
+    st.markdown("**【手順A】手持ちの食材を入力・編集する**")
     
-    st.markdown("**【手順A】手持ちの食材を入力・編集する**（消えずに即座に反映されます）")
-    
+    # 🌟【修正の核】セッション状態のループ上書きを完全廃止し、
+    # 常にベースDFを渡しつつ一意のkeyで編集状態をStreamlitに直接ホールドさせます。
     edited_ingredients = st.data_editor(
-        st.session_state['ingredients_data'], 
+        st.session_state['base_ingredients'], 
         num_rows="dynamic", 
         use_container_width=True,
-        key="ingredients_editor"
+        key="stable_ingredients_editor"
     )
-    st.session_state['ingredients_data'] = edited_ingredients
     
-    # 🌟 食材を適用して3パターンのオリジナル料理を動的生成するボタン
+    # 手順B: 提案実行ボタン
     if st.button("🔍 【手順B】この食材から料理を複数提案してもらう", type="secondary", use_container_width=True):
         ingredients_list = edited_ingredients["食材名"].dropna().tolist()
         ingredients_list = [i for i in ingredients_list if i.strip() != ""]
         
         if not ingredients_list:
-            st.error("⚠️ 食材名が入力されていません。1つ以上入力してください。")
+            st.error("⚠️ 食材名が入力されていません。")
         else:
-            # 3つの異なるジャンルレシピを動的組み立て
             recipes_result = generate_multiple_dynamic_recipes(ingredients_list)
             st.session_state['generated_recipes'] = recipes_result
             st.session_state['suggested_options'] = list(recipes_result.keys())
-            st.session_state['calculated'] = False  # 新しい提案になったので計算は未完了に戻す
+            st.session_state['calculated'] = False  
             
             proposal_msg = f"もっち、食材をスキャンしたよ！今ある材料から、炒め物、ご飯物、スープ煮込みの【3つの選択肢】を作ったよ！下のリストからどれにしたいか選んでね。"
             st.session_state['chat_history'].append({"role": "assistant", "content": proposal_msg})
@@ -283,7 +278,7 @@ with col_left:
             else:
                 calc_val = round(float(base_val) * ratio * adj, 2)
                 unit = "ml" if "水" in name else "大さじ"
-                st.write(f"・{name}: **{calc_val}** {unit} (人数・蒸発率補正済)")
+                st.write(f"・{name}: **{calc_val}** {unit}")
 
 # 【右カラム】対話型ロボットウインドウ
 with col_right:
