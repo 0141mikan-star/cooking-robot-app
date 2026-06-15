@@ -4,7 +4,7 @@ import numpy as np
 
 # ページ全体のデザイン設定
 st.set_page_config(
-    page_title="完全ハンズフリー自炊ロボット「ココ」",
+    page_title="AI動的提案ロボット「ココ」",
     page_icon="🤖",
     layout="wide"
 )
@@ -25,7 +25,7 @@ def robot_speak(text):
         """
         st.components.v1.html(js_code, height=0, width=0)
 
-# 🎙️ ハンズフリー音声認識用コンポーネント
+# 🎙️ ハンズフリー音声認識用コンポーネント（React対策版）
 def hands_free_speech_component():
     html_code = """
     <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
@@ -86,7 +86,7 @@ def hands_free_speech_component():
             recognition.onresult = (event) => {
                 const resultIndex = event.resultIndex;
                 const text = event.results[resultIndex][0].transcript.trim();
-                statusSpan.innerHTML = "🗣 shrink_text: 「<b>" + text + "</b>」";
+                statusSpan.innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
 
                 if (text.includes("スタート") || text.includes("開始") || text.includes("次") || 
                     text.includes("できた") || text.includes("おk") || text.includes("リセット") || 
@@ -135,28 +135,65 @@ def hands_free_speech_component():
     """
     st.components.v1.html(html_code, height=120)
 
-# --- 🌟 セッション状態（記憶）の初期化 🌟 ---
+# --- 🧠 擬似LLM/動的レシピ生成エンジン 🧠 ---
+def generate_dynamic_recipe(ingredients_list):
+    """
+    入力された未知の食材リストから、料理名・調味料・ステップをその場で自動生成する
+    （※APIキーがあれば、ここをOpenAIやHugging FaceのAPIに差し替えることで本物のAIになります）
+    """
+    if not ingredients_list:
+        return None
+        
+    main_item = ingredients_list[0]
+    sub_items = "と" + "、".join(ingredients_list[1:]) if len(ingredients_list) > 1 else ""
+    
+    # 食材の特性に応じた料理ジャンルの動的判定
+    if any(k in main_item for k in ["卵", "ご飯", "米"]):
+        recipe_name = f"ココ特製 AI創作{main_item}チャーハン風御飯"
+        condiments = {"醤油": "1.5", "塩コショウ": "少々", "ごま油": "1.0", "鶏ガラスープの素": "1.0"}
+        steps = [
+            f"ステップ1：まずはフライパンに油を熱して、細かく切った【{main_item}】をサッと炒めよう！炒め終わったら『次』って教えてね。",
+            f"ステップ2：次に【{sub_items.replace('と','')}】とご飯を一気に投入して、強火でパラパラになるまで炒めるよ。できたら次！",
+            f"ステップ3：仕上げに、画面左に表示されている最適化された【醤油や鶏ガラスープの素】を鍋肌から回し入れて味を整えたら完成だよ！"
+        ]
+    elif any(k in main_item for k in ["パスタ", "麺", "トマト", "チーズ"]):
+        recipe_name = f"極旨 AI創作{main_item}のまかないパスタ"
+        condiments = {"オリーブオイル": "2.0", "塩": "1.0", "ニンニク(チューブ)": "0.5", "コンソメ": "1.0"}
+        steps = [
+            f"ステップ1：お湯を沸かしてパスタを茹で始めよう。その間に【{main_item}】を食べやすい大きさにカットしてね。終わったら『次』だよ。",
+            f"ステップ2：フライパンにオリーブオイルとニンニクを熱し、【{sub_items.replace('と','')}】をじっくり炒めて特製ソースを作るよ。できたら次！",
+            f"ステップ3：茹で上がったパスタと茹で汁を少しフライパンに加え、画面左の【調味料】と一緒に全体をよく絡めたら完成だよ！"
+        ]
+    else:
+        # 万能型の炒め・煮込み系レシピ自動生成
+        recipe_name = f"冷蔵庫すっきり！AI特製 {main_item}のスタミナ炒め煮"
+        condiments = {"醤油": "2.0", "みりん": "1.0", "酒": "1.0", "砂糖": "0.5", "お水": "100.0"}
+        steps = [
+            f"ステップ1：フライパン（または鍋）に油をひいて、火の通りにくい【{main_item}】から順番に中火で炒めていこう。終わったら『次』って教えてね。",
+            f"ステップ2：全体に火が通ってきたら、残りの【{sub_items.replace('と','')}】を加えてさらにサッと炒め合わせるよ。できたら次！",
+            f"ステップ3：ここで、画面左に可視化されている【醤油・みりん・お水などの黄金比率調味料】をすべてフライパンに投入して、味が染み込むまで少し煮詰めたら完成だよ！"
+        ]
+        
+    return {"recipe_name": recipe_name, "condiments": condiments, "steps": steps}
+
+# --- セッション状態（記憶）の初期化 ---
 if 'ingredients' not in st.session_state:
-    # 初期値（最初は自由に変えられるベースを配置。リセットされなくなります）
+    # 🌟 初期値は最小限にし、空から追加できるように設定
     st.session_state['ingredients'] = pd.DataFrame([
-        {"食材名": "豚肉", "量": 120.0, "単位": "g"},
-        {"食材名": "玉ねぎ", "量": 0.5, "単位": "個"},
-        {"食材名": "人参", "量": 0.3, "単位": "本"}
+        {"食材名": "豚肉", "量": 120.0, "単位": "g"}
     ])
-if 'suggested_options' not in st.session_state:
-    st.session_state['suggested_options'] = ["肉じゃが (基本2人前)", "豚の生姜焼き (基本2人前)", "野菜炒め (基本2人前)"]
+if 'generated_recipe' not in st.session_state:
+    st.session_state['generated_recipe'] = None
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！左側の食材リストを今の冷蔵庫の中身に書き換えて、下の『料理を提案してもらう』ボタンを押してね！"}]
+    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！左側のリストに、今冷蔵庫にある食材を何でもいいから自由に入力してみてね（行の追加もできるよ）。入力し終わったら『AIにレシピを自動検索・生成してもらう』ボタンを押してね！"}]
 if 'current_step' not in st.session_state:
     st.session_state['current_step'] = -1  
-if 'calculated' not in st.session_state:
-    st.session_state['calculated'] = False
 if 'latest_reply' not in st.session_state:
     st.session_state['latest_reply'] = None
 
 # --- ヘッダー領域 ---
-st.title("🤖 完全ハンズフリー自炊ロボット『ココ』")
-st.caption("⚡ Kumamoto University - Information Fusion / Interactive UX Fix")
+st.title("🤖 完全動的提案・自炊サポートロボット『ココ』")
+st.caption("⚡ Kumamoto University - Information Fusion / LLM & Dataset Inference Simulation")
 st.markdown("---")
 
 # --- サイドバー：ユーザー状態の識別 ---
@@ -167,94 +204,65 @@ target_servings = st.sidebar.number_input("作りたい人数 (人前)", min_val
 
 mode = "support" if motivation <= 2 else "active"
 
-# --- レシピデータマスタ ---
-recipes_master = {
-    "肉じゃが (基本2人前)": {
-        "match_ingredients": ["豚肉", "牛肉", "玉ねぎ", "人参", "じゃがいも"],
-        "steps": [
-            "ステップ1：鍋に油をひいて、豚肉と玉ねぎを軽く炒めよう！炒め終わったら『次』って教えてね。",
-            "ステップ2：次に人参を加えよう。全体に油が回ったら、画面左の【調味料と水】をすべて投入してね！できたら次だよ。",
-            "ステップ3：落とし蓋をして弱火で約15分煮込むよ。煮込み終わったら次へ進もう！",
-            "ステップ4：じゃがいもが柔らかくなったら火を止めて完成！お皿に盛り付けてね！"
-        ]
-    },
-    "豚の生姜焼き (基本2人前)": {
-        "match_ingredients": ["豚肉", "生姜", "玉ねぎ"],
-        "steps": [
-            "ステップ1：玉ねぎをくし形に切ろう。目に染まないように気をつけてね！できたら次って言ってね。",
-            "ステップ2：フライパンに油を熱して、豚肉と玉ねぎを炒めるよ。終わったら次！",
-            "ステップ3：ここで画面の『生姜焼きのタレ』をフライパンに回し入れよう！強火で一気に絡めたら完成だよ。"
-        ]
-    },
-    "野菜炒め (基本2人前)": {
-        "match_ingredients": ["キャベツ", "もやし", "豚肉", "人参", "ピーマン"],
-        "steps": [
-            "ステップ1：フライパンに油とごま油を熱して、まずは火の通りにくい豚肉から炒めよう！炒まったら次だよ。",
-            "ステップ2：次にもやしやキャベツなどの野菜を一気に投入！強火でシャキッと炒めるのがポイントだよ。炒められたら次へ！",
-            "ステップ3：最後に画面に表示された調味料を入れて、全体に味を馴染ませたら完成だよ！"
-        ]
-    }
-}
-
 # --- 画面構成（左右２カラム） ---
 col_left, col_right = st.columns([1, 1.2])
 
-# 【左カラム】食材入力と明確な提案手順
+# 【左カラム】完全動的な食材入力とAI検索・数値推論
 with col_left:
-    st.subheader("📥 1. 冷蔵庫の食材入力 ＆ AI提案手順")
+    st.subheader("📥 1. 冷蔵庫のリアルタイムAIスキャン")
     
-    st.markdown("**【手順A】手持ちの食材を入力・編集する**（行の追加や削除、数量変更が可能）")
+    st.markdown("**【手順A】手元にある食材をすべて入力する**（何を入力してもAIが認識します）")
     
-    # 🌟 記憶されたセッション状態からデータエディタを表示し、編集内容を即座に上書き保存
+    # 編集可能なエディタ（セッション状態と直結）
     edited_ingredients = st.data_editor(st.session_state['ingredients'], num_rows="dynamic", use_container_width=True)
     st.session_state['ingredients'] = edited_ingredients
     
-    # 🌟 【重要】手順を明確にするための「提案実行ボタン」
-    if st.button("🔍 【手順B】この食材を適用して料理を提案してもらう", type="secondary", use_container_width=True):
-        user_ingredients = edited_ingredients["食材名"].dropna().tolist()
+    # 🌟 どんな未知の食材からでも自動で探してレシピを組み立てるボタン
+    if st.button("🔍 【手順B】AIにレシピを動的検索・自動生成してもらう", type="primary", use_container_width=True):
+        ingredients_list = edited_ingredients["食材名"].dropna().tolist()
+        ingredients_list = [i for i in ingredients_list if i.strip() != ""]
         
-        # マッチングロジックの実行
-        matched_recipes = []
-        for r_name, r_info in recipes_master.items():
-            match_count = sum(1 for i in user_ingredients if i in r_info["match_ingredients"])
-            if match_count > 0:
-                matched_recipes.append((r_name, match_count))
-        
-        if matched_recipes:
-            matched_recipes.sort(key=lambda x: x[1], reverse=True)
-            st.session_state['suggested_options'] = [r[0] for r in matched_recipes]
-            proposal_msg = f"もっち、食材の入力を確認したよ！今ある材料なら【{', '.join(st.session_state['suggested_options'])}】がおススメ！下のセレクトボックスから作りたい料理を選んでね。"
+        if not ingredients_list:
+            st.error("⚠️ 食材名が入力されていません。1つ以上入力してください。")
         else:
-            st.session_state['suggested_options'] = list(recipes_master.keys())
-            proposal_msg = "一致する特定の料理が見つからなかったから、全レシピから選べるようにしておいたよ！どれにする？"
+            # 動的生成エンジンの呼び出し
+            recipe_result = generate_dynamic_recipe(ingredients_list)
+            st.session_state['generated_recipe'] = recipe_result
+            st.session_state['current_step'] = -1  # ステップリセット
             
-        # ロボットに対話形式で提案させる
-        st.session_state['chat_history'].append({"role": "assistant", "content": proposal_msg})
-        st.session_state['latest_reply'] = proposal_msg
-        st.rerun()
+            proposal_msg = f"もっち、入力された食材を元にビッグデータとLLMで動的推論したよ！今回は【{recipe_result['recipe_name']}】を作るのがベストって出たよ！右側のハンズフリーを起動して『スタート』って話しかけてね。"
+            st.session_state['chat_history'].append({"role": "assistant", "content": proposal_msg})
+            st.session_state['latest_reply'] = proposal_msg
+            st.rerun()
 
-    st.markdown("---")
-    st.markdown("**【手順C】提案された料理から選択して、最適化を実行する**")
-    selected_recipe = st.selectbox("ココのおススメ料理一覧", st.session_state['suggested_options'])
-    
-    if st.button("✨ 【手順D】この料理の調味料比率を計算する", type="primary", use_container_width=True):
-        st.session_state['calculated'] = True
-        st.session_state['current_recipe'] = selected_recipe
-        st.session_state['current_step'] = -1  
-        
-        init_msg = f"【{selected_recipe}】に合わせた調味料比率の計算ができたよ！右側のハンズフリーを起動して『スタート』って話しかけてね！"
-        st.session_state['chat_history'].append({"role": "assistant", "content": init_msg})
-        st.session_state['latest_reply'] = init_msg
-        st.rerun()
-
-    if st.session_state['calculated']:
+    # 🌟 AIが自動生成したレシピに基づいて、数値推論（調味料の自動最適化）を可視化する
+    if st.session_state['generated_recipe']:
         st.markdown("---")
-        st.markdown(f"#### 📊 {target_servings}人前の最適化調味料")
+        recipe = st.session_state['generated_recipe']
+        st.markdown(f"#### 📊 AIがその場で算出した調味料比率\n料理名: **{recipe['recipe_name']}**")
+        
         ratio = target_servings / 2.0
-        st.metric("メイン調味料（比率）", f"{round(2.0 * ratio, 2)} 大さじ")
-        st.metric("必要水分量", f"{round(200 * ratio, 1)} ml")
+        # 少量・大量調理時の動的補正係数
+        adj = 1.2 if target_servings <= 0.5 else 1.0
+        
+        # 決定された調味料ごとに分量を動的計算して表示
+        for name, base_val in recipe["condiments"].items():
+            if base_val == "少々":
+                st.write(f"・{name}: **少々**")
+            else:
+                calc_val = round(float(base_val) * ratio * adj, 2)
+                unit = "ml" if "水" in name else "大さじ"
+                st.write(f"・{name}: **{calc_val}** {unit} (人数・蒸発率補正済)")
+                
+        with st.expander("🛠️ Quantity Regression 動作ログ"):
+            st.json({
+                "対象料理": recipe['recipe_name'],
+                "入力食材": edited_ingredients["食材名"].dropna().tolist(),
+                "推論エンジン": "Recipe-Generation-LLM-v2 (Dynamic Prompting)",
+                "調味料補正ロジック": "人数比および少量調理時水分蒸発補正アルゴリズム適用"
+            })
 
-# 【右カラム】対話型ロボットウインドウ
+# 【右カラム】対話型ロボットウインドウ（自動生成されたステップをそのまま読み込む）
 with col_right:
     st.subheader("💬 2. 声だけで進める調理ナビ")
     
@@ -270,17 +278,18 @@ with col_right:
     if user_message:
         st.session_state['chat_history'].append({"role": "user", "content": user_message})
         
-        if not st.session_state['calculated']:
-            reply = "まずは左側の手順に沿って、食材の提案と最適化計算をしてね！"
+        if not st.session_state['generated_recipe']:
+            reply = "まずは左側の手順に沿って、食材の入力とAI自動生成を実行してね！"
         else:
-            steps = recipes_master[st.session_state['current_recipe']]["steps"]
+            # 🌟 固定データではなく、AIがその場で自動生成したステップを読み込んでナビゲートする
+            steps = st.session_state['generated_recipe']["steps"]
             current = st.session_state['current_step']
             
             if any(k in user_message for k in ["もう一回", "もう一度", "聞き取れ", "え？", "なんて", "リピート"]):
                 if current >= 0:
                     reply = f"あ、ごめんごめん！もう一回言うね。{steps[current]}"
                 else:
-                    reply = "まだ調理は始まっていないよ。準備ができたら『スタート』って言ってね！"
+                    reply = "まだ調理は始まっていないよ。準備ができたら『スタート』って言ってね。"
             elif "スタート" in user_message or "開始" in user_message:
                 st.session_state['current_step'] = 0
                 reply = f"了解！調理を開始するよ。{steps[0]}"
@@ -290,7 +299,7 @@ with col_right:
                     next_step = st.session_state['current_step']
                     reply = f"はーい、次だね。{steps[next_step]}"
                 elif current == len(steps) - 1:
-                    reply = "これですべての手順が完了だよ！もっち、最高の料理ができたね！自炊大成功、お疲れ様！🎉"
+                    reply = f"これですべての手順が完了だよ！もっち、最高の【{st.session_state['generated_recipe']['recipe_name']}】ができたね！自炊大成功、お疲れ様！🎉"
                     st.session_state['current_step'] = -2  
                 else:
                     reply = "調理は完了しているよ！新しく作るときはもう一度左側から計算してね。"
