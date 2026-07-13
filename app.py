@@ -7,7 +7,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 🤖 ロボットの発話（音声合成）
+# 🤖 ロボットの発話（音声合成）用のJavaScript
 def robot_speak(text):
     if text:
         safe_text = text.replace('\n', ' ').replace('\r', '').replace("'", "\\'")
@@ -28,10 +28,10 @@ def robot_speak(text):
             }}
         </script>
         """
-        # 🚨修正1：廃止されたコンポーネントを使わず、最新の st.html() を使用
-        st.html(js_code)
+        # 動いていた頃の方式に復元
+        st.components.v1.html(js_code, height=0, width=0)
 
-# 🎙️ ハンズフリー音声認識
+# 🎙️ ハンズフリー音声認識用コンポーネント（完全復元＋ループ対策版）
 def hands_free_speech_component():
     html_code = """
     <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
@@ -58,118 +58,105 @@ def hands_free_speech_component():
     </div>
 
     <script>
-    setTimeout(function() {
-        const targetWindow = window.parent || window;
-        
-        if (!targetWindow._speechInitialized) {
-            targetWindow._speechInitialized = true;
-            targetWindow._isListening = false;
-            targetWindow._isManualStop = false;
-            
-            const SpeechRec = targetWindow.SpeechRecognition || targetWindow.webkitSpeechRecognition;
-            if (SpeechRec) {
-                targetWindow._recognition = new SpeechRec();
-                targetWindow._recognition.continuous = true;
-                targetWindow._recognition.interimResults = false;
-                targetWindow._recognition.lang = 'ja-JP';
-                
-                targetWindow._recognition.onstart = () => {
-                    targetWindow._isListening = true;
-                    updateUI(true);
-                };
-                
-                targetWindow._recognition.onresult = (event) => {
-                    if (targetWindow.isRobotSpeaking) return;
-                    
-                    const text = event.results[event.resultIndex][0].transcript.trim();
-                    if (!text) return;
-                    
-                    const statusText = document.getElementById('status');
-                    if (statusText) statusText.innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
-                    
-                    try {
-                        const targetDoc = targetWindow.document;
-                        const chatInput = targetDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                        if (chatInput) {
-                            const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                            nativeSet.call(chatInput, text);
-                            chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            
-                            setTimeout(() => {
-                                const sendBtn = targetDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-                                if (sendBtn) { 
-                                    sendBtn.removeAttribute('disabled'); 
-                                    sendBtn.click(); 
-                                }
-                            }, 150);
-                        }
-                    } catch (e) {
-                        console.error("送信エラー:", e);
-                    }
-                };
-                
-                targetWindow._recognition.onerror = (e) => {
-                    const statusText = document.getElementById('status');
-                    if(statusText) {
-                        if(e.error === 'not-allowed') {
-                            statusText.innerText = "⚠️ マイクが許可されていません。URL横の鍵マークから許可してください。";
-                            targetWindow._isManualStop = true;
-                        } else if (e.error !== 'no-speech') {
-                            statusText.innerText = "⚠️ エラーが発生しました: " + e.error;
-                        }
-                    }
-                };
-                
-                targetWindow._recognition.onend = () => {
-                    targetWindow._isListening = false;
-                    if (!targetWindow._isManualStop) {
-                        setTimeout(() => { try { targetWindow._recognition.start(); } catch(e){} }, 500);
-                    } else {
-                        updateUI(false);
-                    }
-                };
-            }
-        }
-
-        function updateUI(isListening) {
-            const btn = document.getElementById('mic-btn');
-            const status = document.getElementById('status');
-            if (!btn || !status) return;
-            
-            if (isListening) {
-                status.innerHTML = "👂 <b>ココが耳を傾けています（話しかけてね！）</b><br><span style='font-size:12px; font-weight:normal;'>例:「スタート」「次何する？」「終わったよ」</span>";
-                btn.innerText = "🛑 ハンズフリーモードを終了する";
-                btn.style.backgroundColor = "#d32f2f";
-            } else {
-                status.innerText = "状態: 停止中";
-                btn.innerText = "🟢 ハンズフリーモードを起動";
-                btn.style.backgroundColor = "#2e7d32";
-            }
-        }
-
         const micBtn = document.getElementById('mic-btn');
-        if (micBtn) {
-            updateUI(targetWindow._isListening);
-            micBtn.onclick = function() {
-                if (!targetWindow._recognition) {
-                    document.getElementById('status').innerText = "❌ ブラウザが音声認識非対応です（Chromeをご利用ください）。";
+        const statusSpan = document.getElementById('status');
+        let isListening = false;
+        let isSubmitting = false; 
+        let isManualStop = false; 
+
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            statusSpan.innerText = "❌ ブラウザが音声認識に対応していません。Google Chromeを使用してください。";
+            micBtn.disabled = true;
+            micBtn.style.backgroundColor = "#ccc";
+        } else {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            
+            recognition.continuous = true; 
+            recognition.interimResults = false;
+            recognition.lang = 'ja-JP';
+
+            micBtn.addEventListener('click', () => {
+                if (!isListening) {
+                    isManualStop = false; 
+                    try { recognition.start(); } catch(e) {}
+                } else {
+                    isManualStop = true; 
+                    recognition.stop();
+                    statusSpan.innerText = "状態: 停止中";
+                    micBtn.innerText = "🟢 ハンズフリーモードを起動";
+                    micBtn.style.backgroundColor = "#2e7d32";
+                }
+            });
+
+            recognition.onstart = () => {
+                isListening = true;
+                statusSpan.innerHTML = "👂 <b>ココが耳を傾けています（自由な言葉で話しかけてね！）</b>";
+                micBtn.innerText = "🛑 ハンズフリーモードを終了する";
+                micBtn.style.backgroundColor = "#d32f2f";
+            };
+
+            recognition.onresult = (event) => {
+                if (isSubmitting) return; 
+
+                const targetWindow = window.parent || window;
+                if (targetWindow.isRobotSpeaking) {
                     return;
                 }
-                if (!targetWindow._isListening) {
-                    targetWindow._isManualStop = false;
-                    try { targetWindow._recognition.start(); } catch(e){}
+
+                const resultIndex = event.resultIndex;
+                const text = event.results[resultIndex][0].transcript.trim();
+                if (!text) return;
+
+                statusSpan.innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
+                isSubmitting = true; 
+
+                try {
+                    const targetDoc = targetWindow.document;
+                    const chatInput = targetDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                    
+                    if (chatInput) {
+                        const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                        nativeTextAreaValueSetter.call(chatInput, text);
+                        chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        
+                        setTimeout(() => {
+                            const sendBtn = targetDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                            if (sendBtn) { 
+                                sendBtn.removeAttribute('disabled');
+                                sendBtn.click(); 
+                            }
+                            setTimeout(() => { isSubmitting = false; }, 2000);
+                        }, 150);
+                    } else {
+                        isSubmitting = false;
+                    }
+                } catch (e) {
+                    isSubmitting = false;
+                }
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error !== 'no-speech') {
+                    statusSpan.innerText = "⚠️ エラー: " + event.error;
+                }
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                if (!isManualStop) {
+                    setTimeout(() => { try { recognition.start(); } catch(e){} }, 500);
                 } else {
-                    targetWindow._isManualStop = true;
-                    targetWindow._recognition.stop();
-                    updateUI(false);
+                    statusSpan.innerText = "状態: 停止中";
+                    micBtn.innerText = "🟢 ハンズフリーモードを起動";
+                    micBtn.style.backgroundColor = "#2e7d32";
                 }
             };
         }
-    }, 150); 
     </script>
     """
-    # 🚨修正1：廃止されたコンポーネントを使わず、最新の st.html() を使用
-    st.html(html_code)
+    # 確実に関数が実行されるように復元
+    st.components.v1.html(html_code, height=140)
 
 # --- 🧠 自然言語処理：意図解釈（インテント識別）エンジン ---
 def parse_user_intent(user_message):
@@ -239,7 +226,7 @@ if 'generated_recipes' not in st.session_state:
 if 'suggested_options' not in st.session_state:
     st.session_state['suggested_options'] = []
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！不具合の原因だった表機能を完全に無くしたから、これで落ちないはずだよ！左側に食材を入力してね。"}]
+    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、ごめんね！グラムも個数もちゃんと入れられるように修正したよ！ハンズフリーも元通りに動くはず！"}]
 if 'current_step' not in st.session_state:
     st.session_state['current_step'] = -1  
 if 'calculated' not in st.session_state:
@@ -261,18 +248,45 @@ with col_left:
     st.subheader("📥 1. 冷蔵庫の食材入力 ＆ AI複数提案")
     st.markdown("**【手順A】手持ちの食材を入力する**")
     
-    # 🚨修正2：クラッシュの元凶である表を廃止し、安全なテキスト入力に変更
-    ingredients_input = st.text_area(
-        "冷蔵庫にある食材を「、」や「,」で区切って入力してね",
-        value="豚肉、玉ねぎ、人参",
-        height=100
-    )
+    # 🌟新機能：クラッシュしない安全な「カスタム食材入力欄」
+    if "ingredients" not in st.session_state:
+        st.session_state.ingredients = [
+            {"name": "豚肉", "amount": 120.0, "unit": "g"},
+            {"name": "玉ねぎ", "amount": 0.5, "unit": "個"},
+            {"name": "人参", "amount": 0.3, "unit": "本"}
+        ]
+
+    # 食材を追加するボタン
+    if st.button("➕ 食材を追加する"):
+        st.session_state.ingredients.append({"name": "", "amount": 0.0, "unit": ""})
+        st.rerun()
+
+    # ヘッダーの表示
+    h_col1, h_col2, h_col3 = st.columns([3, 2, 2])
+    h_col1.markdown("**食材名**")
+    h_col2.markdown("**量**")
+    h_col3.markdown("**単位**")
+
+    updated_ingredients = []
+    for i, ing in enumerate(st.session_state.ingredients):
+        col1, col2, col3 = st.columns([3, 2, 2])
+        with col1:
+            name = st.text_input("食材名", value=ing["name"], key=f"name_{i}", label_visibility="collapsed", placeholder="食材名")
+        with col2:
+            amount = st.number_input("量", value=float(ing["amount"]), key=f"amount_{i}", label_visibility="collapsed", step=1.0)
+        with col3:
+            unit = st.text_input("単位", value=ing["unit"], key=f"unit_{i}", label_visibility="collapsed", placeholder="単位")
+        
+        updated_ingredients.append({"name": name, "amount": amount, "unit": unit})
+    
+    st.session_state.ingredients = updated_ingredients
+    
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # 手順B: 提案実行ボタン
-    if st.button("🔍 【手順B】この食材から料理を複数提案してもらう"):
-        # テキストを解析してリストに変換
-        raw_list = ingredients_input.replace(',', '、').split('、')
-        ingredients_list = [i.strip() for i in raw_list if i.strip() != ""]
+    if st.button("🔍 【手順B】この食材から料理を複数提案してもらう", type="secondary"):
+        # 食材名だけを抽出してリスト化
+        ingredients_list = [ing["name"].strip() for ing in st.session_state.ingredients if ing["name"].strip() != ""]
         
         if not ingredients_list:
             st.error("⚠️ 食材名が入力されていません。")
@@ -290,7 +304,7 @@ with col_left:
     st.markdown("**【手順C】提案された選択肢から料理を選んで最適化する**")
     selected_recipe = st.selectbox("ココのおススメ料理選択肢", st.session_state['suggested_options'])
     
-    if st.button("✨ 【手順D】この料理の調味料比率を計算する"):
+    if st.button("✨ 【手順D】この料理の調味料比率を計算する", type="primary"):
         if not selected_recipe:
             st.error("⚠️ まずは【手順B】のボタンを押してね！")
         else:
