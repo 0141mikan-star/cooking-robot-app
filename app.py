@@ -35,11 +35,12 @@ def robot_speak(text):
         st.html(js_code)
 
 # 🎙️ ハンズフリー音声認識用コンポーネント（無限ループ・終了できない問題対策版）
+# 🎙️ ハンズフリー音声認識用コンポーネント（ボタン無反応バグ・マイク許可対応版）
 def hands_free_speech_component():
     html_code = """
     <div style="height: 150px;">
         <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
-            <button id="mic-btn" style="
+            <button id="mic-btn" onclick="window.toggleHandsFree()" style="
                 background-color: #2e7d32; 
                 color: white; 
                 border: none; 
@@ -63,101 +64,115 @@ def hands_free_speech_component():
     </div>
 
     <script>
-        const micBtn = document.getElementById('mic-btn');
-        const statusSpan = document.getElementById('status');
-        let isListening = false;
-        let isSubmitting = false; 
-        let isManualStop = false; 
+        // Streamlitの画面更新（再描画）で設定が消えないよう、windowオブジェクトに直接保存
+        if (typeof window.speechSetupDone === 'undefined') {
+            window.isListening = false;
+            window.isSubmitting = false;
+            window.isManualStop = false;
+            window.isRobotSpeaking = false;
 
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            statusSpan.innerText = "❌ ブラウザが音声認識に対応していません。Google Chromeを使用してください。";
-            micBtn.disabled = true;
-            micBtn.style.backgroundColor = "#ccc";
-        } else {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
             
-            recognition.continuous = true; 
-            recognition.interimResults = false;
-            recognition.lang = 'ja-JP';
+            if (SpeechRecognition) {
+                window.recognition = new SpeechRecognition();
+                window.recognition.continuous = true; 
+                window.recognition.interimResults = false;
+                window.recognition.lang = 'ja-JP';
 
-            micBtn.addEventListener('click', () => {
-                if (!isListening) {
-                    isManualStop = false; 
-                    try { recognition.start(); } catch(e) {}
-                } else {
-                    isManualStop = true; 
-                    recognition.stop();
-                    statusSpan.innerText = "状態: 停止中";
-                    micBtn.innerText = "🟢 ハンズフリーモードを起動";
-                    micBtn.style.backgroundColor = "#2e7d32";
-                }
-            });
-
-            recognition.onstart = () => {
-                isListening = true;
-                statusSpan.innerHTML = "👂 <b>ココが耳を傾けています（自由な言葉で話しかけてね！）</b><br><span style='font-size:12px; font-weight:normal;'>例:「スタート」「次何する？」「終わったよ」「もう一回言って」</span>";
-                micBtn.innerText = "🛑 ハンズフリーモードを終了する";
-                micBtn.style.backgroundColor = "#d32f2f";
-            };
-
-            recognition.onresult = (event) => {
-                if (isSubmitting) return; 
-
-                const targetWindow = window.parent || window;
-                if (targetWindow.isRobotSpeaking) {
-                    return;
-                }
-
-                const resultIndex = event.resultIndex;
-                const text = event.results[resultIndex][0].transcript.trim();
-                if (!text) return;
-
-                statusSpan.innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
-                isSubmitting = true; 
-
-                try {
-                    const targetDoc = targetWindow.document;
-                    const chatInput = targetDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                    
-                    if (chatInput) {
-                        const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                        nativeTextAreaValueSetter.call(chatInput, text);
-                        chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        
-                        setTimeout(() => {
-                            const sendBtn = targetDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-                            if (sendBtn) { 
-                                sendBtn.removeAttribute('disabled');
-                                sendBtn.click(); 
-                            }
-                            setTimeout(() => { isSubmitting = false; }, 2000);
-                        }, 150);
-                    } else {
-                        isSubmitting = false;
+                window.recognition.onstart = () => {
+                    window.isListening = true;
+                    document.getElementById('status').innerHTML = "👂 <b>ココが耳を傾けています（話しかけてね！）</b><br><span style='font-size:12px; font-weight:normal;'>例:「スタート」「次何する？」「終わったよ」</span>";
+                    const btn = document.getElementById('mic-btn');
+                    if(btn) {
+                        btn.innerText = "🛑 ハンズフリーモードを終了する";
+                        btn.style.backgroundColor = "#d32f2f";
                     }
-                } catch (e) {
-                    console.error("Streamlitへのデータ送信に失敗:", e);
-                    isSubmitting = false;
-                }
-            };
+                };
 
-            recognition.onerror = (event) => {
-                if (event.error !== 'no-speech') {
-                    statusSpan.innerText = "⚠️ エラー: " + event.error;
-                }
-            };
+                window.recognition.onresult = (event) => {
+                    if (window.isSubmitting || window.isRobotSpeaking) return; 
 
-            recognition.onend = () => {
-                isListening = false;
-                if (!isManualStop) {
-                    setTimeout(() => { try { recognition.start(); } catch(e){} }, 500);
-                }
-            };
+                    const resultIndex = event.resultIndex;
+                    const text = event.results[resultIndex][0].transcript.trim();
+                    if (!text) return;
+
+                    document.getElementById('status').innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
+                    window.isSubmitting = true; 
+
+                    try {
+                        const chatInput = document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                        if (chatInput) {
+                            const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                            nativeTextAreaValueSetter.call(chatInput, text);
+                            chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            setTimeout(() => {
+                                const sendBtn = document.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                                if (sendBtn) { 
+                                    sendBtn.removeAttribute('disabled');
+                                    sendBtn.click(); 
+                                }
+                                setTimeout(() => { window.isSubmitting = false; }, 2000);
+                            }, 150);
+                        } else {
+                            window.isSubmitting = false;
+                        }
+                    } catch (e) {
+                        console.error("送信失敗:", e);
+                        window.isSubmitting = false;
+                    }
+                };
+
+                window.recognition.onerror = (event) => {
+                    if (event.error === 'not-allowed') {
+                        document.getElementById('status').innerText = "⚠️ ブラウザのマイク使用が許可されていません。URLバーの横からマイクを許可してください。";
+                        window.isManualStop = true;
+                    } else if (event.error !== 'no-speech') {
+                        document.getElementById('status').innerText = "⚠️ エラー: " + event.error;
+                    }
+                };
+
+                window.recognition.onend = () => {
+                    window.isListening = false;
+                    if (!window.isManualStop) {
+                        setTimeout(() => { try { window.recognition.start(); } catch(e){} }, 500);
+                    } else {
+                        const btn = document.getElementById('mic-btn');
+                        if(btn) {
+                            document.getElementById('status').innerText = "状態: 停止中";
+                            btn.innerText = "🟢 ハンズフリーモードを起動";
+                            btn.style.backgroundColor = "#2e7d32";
+                        }
+                    }
+                };
+            }
+            window.speechSetupDone = true;
         }
+
+        // ボタンが押されたときの処理（HTML側から直接呼ばれる）
+        window.toggleHandsFree = function() {
+            const btn = document.getElementById('mic-btn');
+            const statusSpan = document.getElementById('status');
+            
+            if (!window.recognition) {
+                statusSpan.innerText = "❌ ブラウザが音声認識に対応していません。Google Chromeを使用してください。";
+                return;
+            }
+
+            if (!window.isListening) {
+                window.isManualStop = false; 
+                try { window.recognition.start(); } catch(e) {}
+            } else {
+                window.isManualStop = true; 
+                window.recognition.stop();
+                
+                statusSpan.innerText = "状態: 停止中";
+                btn.innerText = "🟢 ハンズフリーモードを起動";
+                btn.style.backgroundColor = "#2e7d32";
+            }
+        };
     </script>
     """
-    # 🚨修正1：非推奨のst.components.v1.htmlをst.htmlに変更（クラッシュ対策）
     st.html(html_code)
 
 # --- 🧠 自然言語処理：意図解釈（インテント識別）エンジン ---
