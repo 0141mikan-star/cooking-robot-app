@@ -3,11 +3,11 @@ import streamlit as st
 # ページ全体のデザイン設定
 st.set_page_config(
     page_title="次世代対話型自炊サポートロボット「ココ」",
-    page_icon="🤖",
+    page_icon="🍳",
     layout="wide"
 )
 
-# 🤖 ロボットの発話（音声合成）用のJavaScript
+# 🍳 ロボットの発話（音声合成）用のJavaScript
 def robot_speak(text):
     if text:
         safe_text = text.replace('\n', ' ').replace('\r', '').replace("'", "\\'")
