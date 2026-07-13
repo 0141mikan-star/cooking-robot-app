@@ -35,12 +35,13 @@ def robot_speak(text):
         st.html(js_code)
 
 # 🎙️ ハンズフリー音声認識用コンポーネント（無限ループ・終了できない問題対策版）
-# 🎙️ ハンズフリー音声認識用コンポーネント（ボタン無反応バグ・マイク許可対応版）
+# 🎙️ ハンズフリー音声認識用コンポーネント（ボタン無反応・セキュリティブロック回避版）
 def hands_free_speech_component():
     html_code = """
     <div style="height: 150px;">
         <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
-            <button id="mic-btn" onclick="window.toggleHandsFree()" style="
+            <!-- onclickを削除し、純粋なボタンとして配置 -->
+            <button id="mic-btn" style="
                 background-color: #2e7d32; 
                 color: white; 
                 border: none; 
@@ -64,117 +65,128 @@ def hands_free_speech_component():
     </div>
 
     <script>
-        // Streamlitの画面更新（再描画）で設定が消えないよう、windowオブジェクトに直接保存
-        if (typeof window.speechSetupDone === 'undefined') {
-            window.isListening = false;
-            window.isSubmitting = false;
-            window.isManualStop = false;
-            window.isRobotSpeaking = false;
-
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    // StreamlitがHTMLを描画した直後に確実に実行させるための遅延処理
+    setTimeout(function() {
+        const targetWindow = window.parent || window;
+        
+        // 1. 音声認識の裏側（エンジン）を1回だけ初期設定する
+        if (!targetWindow._speechInitialized) {
+            targetWindow._speechInitialized = true;
+            targetWindow._isListening = false;
+            targetWindow._isManualStop = false;
             
-            if (SpeechRecognition) {
-                window.recognition = new SpeechRecognition();
-                window.recognition.continuous = true; 
-                window.recognition.interimResults = false;
-                window.recognition.lang = 'ja-JP';
-
-                window.recognition.onstart = () => {
-                    window.isListening = true;
-                    document.getElementById('status').innerHTML = "👂 <b>ココが耳を傾けています（話しかけてね！）</b><br><span style='font-size:12px; font-weight:normal;'>例:「スタート」「次何する？」「終わったよ」</span>";
-                    const btn = document.getElementById('mic-btn');
-                    if(btn) {
-                        btn.innerText = "🛑 ハンズフリーモードを終了する";
-                        btn.style.backgroundColor = "#d32f2f";
-                    }
+            const SpeechRec = targetWindow.SpeechRecognition || targetWindow.webkitSpeechRecognition;
+            if (SpeechRec) {
+                targetWindow._recognition = new SpeechRec();
+                targetWindow._recognition.continuous = true;
+                targetWindow._recognition.interimResults = false;
+                targetWindow._recognition.lang = 'ja-JP';
+                
+                targetWindow._recognition.onstart = () => {
+                    targetWindow._isListening = true;
+                    updateUI(true);
                 };
-
-                window.recognition.onresult = (event) => {
-                    if (window.isSubmitting || window.isRobotSpeaking) return; 
-
-                    const resultIndex = event.resultIndex;
-                    const text = event.results[resultIndex][0].transcript.trim();
+                
+                targetWindow._recognition.onresult = (event) => {
+                    // ロボットが喋っている間は自分の声を無視
+                    if (targetWindow.isRobotSpeaking) return;
+                    
+                    const text = event.results[event.resultIndex][0].transcript.trim();
                     if (!text) return;
-
-                    document.getElementById('status').innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
-                    window.isSubmitting = true; 
-
+                    
+                    const statusText = document.getElementById('status');
+                    if (statusText) statusText.innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
+                    
+                    // Streamlitのチャット入力欄へ自動送信
                     try {
-                        const chatInput = document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                        const targetDoc = targetWindow.document;
+                        const chatInput = targetDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
                         if (chatInput) {
-                            const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                            nativeTextAreaValueSetter.call(chatInput, text);
+                            const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                            nativeSet.call(chatInput, text);
                             chatInput.dispatchEvent(new Event('input', { bubbles: true }));
                             
                             setTimeout(() => {
-                                const sendBtn = document.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                                const sendBtn = targetDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
                                 if (sendBtn) { 
-                                    sendBtn.removeAttribute('disabled');
+                                    sendBtn.removeAttribute('disabled'); 
                                     sendBtn.click(); 
                                 }
-                                setTimeout(() => { window.isSubmitting = false; }, 2000);
                             }, 150);
-                        } else {
-                            window.isSubmitting = false;
                         }
                     } catch (e) {
-                        console.error("送信失敗:", e);
-                        window.isSubmitting = false;
+                        console.error("送信エラー:", e);
                     }
                 };
-
-                window.recognition.onerror = (event) => {
-                    if (event.error === 'not-allowed') {
-                        document.getElementById('status').innerText = "⚠️ ブラウザのマイク使用が許可されていません。URLバーの横からマイクを許可してください。";
-                        window.isManualStop = true;
-                    } else if (event.error !== 'no-speech') {
-                        document.getElementById('status').innerText = "⚠️ エラー: " + event.error;
-                    }
-                };
-
-                window.recognition.onend = () => {
-                    window.isListening = false;
-                    if (!window.isManualStop) {
-                        setTimeout(() => { try { window.recognition.start(); } catch(e){} }, 500);
-                    } else {
-                        const btn = document.getElementById('mic-btn');
-                        if(btn) {
-                            document.getElementById('status').innerText = "状態: 停止中";
-                            btn.innerText = "🟢 ハンズフリーモードを起動";
-                            btn.style.backgroundColor = "#2e7d32";
+                
+                targetWindow._recognition.onerror = (e) => {
+                    const statusText = document.getElementById('status');
+                    if(statusText) {
+                        if(e.error === 'not-allowed') {
+                            statusText.innerText = "⚠️ マイクが許可されていません。URL横の鍵マークから許可してください。";
+                            targetWindow._isManualStop = true;
+                        } else if (e.error !== 'no-speech') {
+                            statusText.innerText = "⚠️ エラーが発生しました: " + e.error;
                         }
                     }
                 };
+                
+                targetWindow._recognition.onend = () => {
+                    targetWindow._isListening = false;
+                    // 手動停止でなければ、勝手に切れても自動で再起動する（ゾンビ対策）
+                    if (!targetWindow._isManualStop) {
+                        setTimeout(() => { try { targetWindow._recognition.start(); } catch(e){} }, 500);
+                    } else {
+                        updateUI(false);
+                    }
+                };
             }
-            window.speechSetupDone = true;
         }
 
-        // ボタンが押されたときの処理（HTML側から直接呼ばれる）
-        window.toggleHandsFree = function() {
+        // 2. 画面の見た目（ボタンの色や文字）を更新する関数
+        function updateUI(isListening) {
             const btn = document.getElementById('mic-btn');
-            const statusSpan = document.getElementById('status');
+            const status = document.getElementById('status');
+            if (!btn || !status) return;
             
-            if (!window.recognition) {
-                statusSpan.innerText = "❌ ブラウザが音声認識に対応していません。Google Chromeを使用してください。";
-                return;
-            }
-
-            if (!window.isListening) {
-                window.isManualStop = false; 
-                try { window.recognition.start(); } catch(e) {}
+            if (isListening) {
+                status.innerHTML = "👂 <b>ココが耳を傾けています（話しかけてね！）</b><br><span style='font-size:12px; font-weight:normal;'>例:「スタート」「次何する？」「終わったよ」</span>";
+                btn.innerText = "🛑 ハンズフリーモードを終了する";
+                btn.style.backgroundColor = "#d32f2f";
             } else {
-                window.isManualStop = true; 
-                window.recognition.stop();
-                
-                statusSpan.innerText = "状態: 停止中";
+                status.innerText = "状態: 停止中";
                 btn.innerText = "🟢 ハンズフリーモードを起動";
                 btn.style.backgroundColor = "#2e7d32";
             }
-        };
+        }
+
+        // 3. セキュリティブロックを回避して、JavaScriptから直接クリック処理を紐付ける
+        const micBtn = document.getElementById('mic-btn');
+        if (micBtn) {
+            // 現在のステータス（起動中か停止中か）に合わせてボタンを復元
+            updateUI(targetWindow._isListening);
+            
+            // クリック時の処理を付与
+            micBtn.onclick = function() {
+                if (!targetWindow._recognition) {
+                    document.getElementById('status').innerText = "❌ ブラウザが音声認識非対応です（Chromeをご利用ください）。";
+                    return;
+                }
+                
+                if (!targetWindow._isListening) {
+                    targetWindow._isManualStop = false;
+                    try { targetWindow._recognition.start(); } catch(e){}
+                } else {
+                    targetWindow._isManualStop = true;
+                    targetWindow._recognition.stop();
+                    updateUI(false);
+                }
+            };
+        }
+    }, 150); // HTMLが画面に出るのを0.15秒待ってから処理を紐付け
     </script>
     """
     st.html(html_code)
-
 # --- 🧠 自然言語処理：意図解釈（インテント識別）エンジン ---
 def parse_user_intent(user_message):
     msg = user_message.lower()
