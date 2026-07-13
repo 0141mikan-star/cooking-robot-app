@@ -12,20 +12,29 @@ st.set_page_config(
 # 🤖 ロボットの発話（音声合成）用のJavaScript
 def robot_speak(text):
     if text:
+        # 改行や引用符でJSが壊れないようにエスケープ
+        safe_text = text.replace('\n', ' ').replace('\r', '').replace("'", "\\'")
         js_code = f"""
         <script>
             if ('speechSynthesis' in window) {{
                 window.speechSynthesis.cancel();
-                var msg = new SpeechSynthesisUtterance({repr(text)});
+                var msg = new SpeechSynthesisUtterance('{safe_text}');
                 msg.lang = 'ja-JP';
                 msg.rate = 1.0;
+                
+                // ★重要：発話中はフラグを立て、マイクが自分の声を拾って無限ループするのを防ぐ
+                window.isRobotSpeaking = true;
+                msg.onend = function() {{ window.isRobotSpeaking = false; }};
+                msg.onerror = function() {{ window.isRobotSpeaking = false; }};
+                
                 window.speechSynthesis.speak(msg);
             }}
         </script>
         """
-        st.components.v1.html(js_code, height=0, width=0)
+        # st.components.v1.htmlの非推奨警告を回避するため直接DOMへ展開
+        st.markdown(js_code, unsafe_allow_html=True)
 
-# 🎙️ ハンズフリー音声認識用コンポーネント（Reactライフサイクル対策版）
+# 🎙️ ハンズフリー音声認識用コンポーネント（無限ループ・クラッシュ対策版）
 def hands_free_speech_component():
     html_code = """
     <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
@@ -55,6 +64,7 @@ def hands_free_speech_component():
         const micBtn = document.getElementById('mic-btn');
         const statusSpan = document.getElementById('status');
         let isListening = false;
+        let isSubmitting = false; // 二重送信防止ロック
 
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             statusSpan.innerText = "❌ ブラウザが音声認識に対応していません。Google Chromeを使用してください。";
@@ -70,7 +80,7 @@ def hands_free_speech_component():
 
             micBtn.addEventListener('click', () => {
                 if (!isListening) {
-                    recognition.start();
+                    try { recognition.start(); } catch(e) {}
                 } else {
                     recognition.stop();
                 }
@@ -84,13 +94,24 @@ def hands_free_speech_component():
             };
 
             recognition.onresult = (event) => {
+                if (isSubmitting) return; 
+
+                // ★重要：ロボットが発話中の場合は自分の声を無視する（セグフォ対策）
+                const targetWindow = window.parent || window;
+                if (targetWindow.isRobotSpeaking) {
+                    return;
+                }
+
                 const resultIndex = event.resultIndex;
                 const text = event.results[resultIndex][0].transcript.trim();
+                if (!text) return;
+
                 statusSpan.innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
+                isSubmitting = true; 
 
                 try {
-                    const parentDoc = window.parent.document;
-                    const chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                    const targetDoc = targetWindow.document;
+                    const chatInput = targetDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
                     
                     if (chatInput) {
                         const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
@@ -98,15 +119,20 @@ def hands_free_speech_component():
                         chatInput.dispatchEvent(new Event('input', { bubbles: true }));
                         
                         setTimeout(() => {
-                            const sendBtn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                            const sendBtn = targetDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
                             if (sendBtn) { 
                                 sendBtn.removeAttribute('disabled');
                                 sendBtn.click(); 
                             }
-                        }, 100);
+                            // 送信後2秒間は認識をブロックし、サーバーへの過負荷を防ぐ
+                            setTimeout(() => { isSubmitting = false; }, 2000);
+                        }, 150);
+                    } else {
+                        isSubmitting = false;
                     }
                 } catch (e) {
                     console.error("Streamlitへのデータ送信に失敗:", e);
+                    isSubmitting = false;
                 }
             };
 
@@ -118,8 +144,8 @@ def hands_free_speech_component():
 
             recognition.onend = () => {
                 isListening = false;
-                if (micBtn.style.backgroundColor !== "rgb(46, 125, 50)") { 
-                    recognition.start();
+                if (micBtn.style.backgroundColor === "rgb(211, 47, 47)") { 
+                    setTimeout(() => { try { recognition.start(); } catch(e){} }, 500);
                 } else {
                     statusSpan.innerText = "状態: 停止中";
                     micBtn.innerText = "🟢 ハンズフリーモードを起動";
@@ -129,23 +155,21 @@ def hands_free_speech_component():
         }
     </script>
     """
-    st.components.v1.html(html_code, height=120)
+    # 状態を維持するためiframeは残す
+    st.components.v1.html(html_code, height=140)
 
 # --- 🧠 自然言語処理：意図解釈（インテント識別）エンジン ---
 def parse_user_intent(user_message):
     msg = user_message.lower()
     
-    # 次に進める意図の解釈（口語表現の揺らぎを網羅）
     next_keywords = ["次", "つぎ", "なんする", "何する", "できた", "終わった", "おわった", "おk", "オッケー", "おっけー", "進めて", "進む", "完了", "next", "いいよ", "おーけー"]
     if any(k in msg for k in next_keywords):
         return "NEXT_STEP"
         
-    # 聞き返しの意図の解釈
     repeat_keywords = ["もう一回", "もう一度", "聞き取れ", "え？", "なんて", "リピート", "聞こえなかった", "もう一度言って", "は？"]
     if any(k in msg for k in repeat_keywords):
         return "REPEAT_STEP"
         
-    # 開始・リセット
     if any(k in msg for k in ["スタート", "開始", "はじめ", "やろう", "作ろう"]):
         return "START_COOKING"
     if any(k in msg for k in ["リセット", "最初から", "やり直し"]):
@@ -161,14 +185,11 @@ def generate_intelligent_recipes(ingredients_list):
     main_item = ingredients_list[0]
     sub_items_clean = "、".join(ingredients_list[1:]) if len(ingredients_list) > 1 else main_item
     
-    # 🌟「卵」が含まれているかを常識判定システムが検知
     has_egg = any("卵" in item for item in ingredients_list)
     recipes = {}
     
-    # 提案1: 炒め物系
     r1_name = f"🍳 AI特製：{main_item}のおかずスタミナ炒め"
     if has_egg:
-        # 卵の特性（火が通りやすく煮込むと固くなる）を考慮した常識的な手順に自動組み替え
         r1_steps = [
             f"ステップ1：まずは卵の処理からいくよ！フライパンに油を強火で熱して、溶いた卵を一気に入れよう。半熟状になったら、一度お皿に取り出してね。できたら教えて！",
             f"ステップ2：同じフライパンで【{main_item}】と【{sub_items_clean}】（卵以外）を中火でしっかり炒めていこう。炒め終わったら次何するか聞いてね。",
@@ -182,7 +203,6 @@ def generate_intelligent_recipes(ingredients_list):
         ]
     recipes[r1_name] = {"condiments": {"醤油": "2.0", "みりん": "1.0", "酒": "1.0", "砂糖": "0.5"}, "steps": r1_steps}
     
-    # 提案2: スープ・煮込み系
     r2_name = f"🍲 AI特製：あったか{main_item}のとろみ中華スープ煮"
     if has_egg:
         r2_steps = [
@@ -228,23 +248,22 @@ with col_left:
     st.subheader("📥 1. 冷蔵庫の食材入力 ＆ AI複数提案")
     st.markdown("**【手順A】手持ちの食材を入力・編集する**")
     
-    # 🌟 バグ修正の核心：第一引数には固定の初期値を渡し、代入ループを完全撤廃。
-    # Streamlit内部がkeyを通じて1回目から完璧に値をホールドします。
     INITIAL_DF = pd.DataFrame([
         {"食材名": "豚肉", "量": 120.0, "単位": "g"},
         {"食材名": "玉ねぎ", "量": 0.5, "単位": "個"},
         {"食材名": "人参", "量": 0.3, "単位": "本"}
     ])
     
+    # 警告対策: use_container_width -> width="stretch"
     edited_ingredients = st.data_editor(
         INITIAL_DF, 
         num_rows="dynamic", 
-        use_container_width=True,
+        width="stretch",
         key="perfect_ingredients_editor"
     )
     
     # 手順B: 提案実行ボタン
-    if st.button("🔍 【手順B】この食材から料理を複数提案してもらう", type="secondary", use_container_width=True):
+    if st.button("🔍 【手順B】この食材から料理を複数提案してもらう", type="secondary", width="stretch"):
         ingredients_list = edited_ingredients["食材名"].dropna().tolist()
         ingredients_list = [i for i in ingredients_list if i.strip() != ""]
         
@@ -259,13 +278,12 @@ with col_left:
             proposal_msg = "もっち、食材を解析したよ！新しく追加された食材の調理特性に合わせて手順を組んだからね。下のリストから選んで！"
             st.session_state['chat_history'].append({"role": "assistant", "content": proposal_msg})
             st.session_state['latest_reply'] = proposal_msg
-    
 
     st.markdown("---")
     st.markdown("**【手順C】提案された選択肢から料理を選んで最適化する**")
     selected_recipe = st.selectbox("ココのおススメ料理選択肢", st.session_state['suggested_options'])
     
-    if st.button("✨ 【手順D】この料理の調味料比率を計算する", type="primary", use_container_width=True):
+    if st.button("✨ 【手順D】この料理の調味料比率を計算する", type="primary", width="stretch"):
         if not selected_recipe:
             st.error("⚠️ まずは【手順B】のボタンを押してね！")
         else:
@@ -277,7 +295,6 @@ with col_left:
             init_msg = f"【{selected_recipe}】の最適化が完了したよ！右側のハンズフリーを起動して、自由な言葉で話しかけてね！"
             st.session_state['chat_history'].append({"role": "assistant", "content": init_msg})
             st.session_state['latest_reply'] = init_msg
-    
 
     if st.session_state['calculated'] and 'current_recipe_data' in st.session_state:
         st.markdown("---")
@@ -308,7 +325,6 @@ with col_right:
             steps = st.session_state['current_recipe_data']["steps"]
             current = st.session_state['current_step']
             
-            # 🌟 自由な発話から意図（インテント）を識別
             intent = parse_user_intent(user_message)
             
             if intent == "START_COOKING":
@@ -337,7 +353,6 @@ with col_right:
                 reply = "調理手順を最初からリセットしたよ。準備ができたら『開始するよ』などと言ってね。"
                 
             else:
-                # 🌟 意図が「質問や雑談」だった場合の動的相槌ロジック
                 if "火" in user_message or "火力" in user_message:
                     reply = "基本的には中火で大丈夫だよ！焦げそうだったら少し弱めて、ココに『次』って教えてね。"
                 elif "卵" in user_message:
