@@ -35,6 +35,7 @@ def robot_speak(text):
         st.markdown(js_code, unsafe_allow_html=True)
 
 # 🎙️ ハンズフリー音声認識用コンポーネント（無限ループ・クラッシュ対策版）
+# 🎙️ ハンズフリー音声認識用コンポーネント（無限ループ・クラッシュ・終了できない問題対策版）
 def hands_free_speech_component():
     html_code = """
     <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
@@ -64,7 +65,8 @@ def hands_free_speech_component():
         const micBtn = document.getElementById('mic-btn');
         const statusSpan = document.getElementById('status');
         let isListening = false;
-        let isSubmitting = false; // 二重送信防止ロック
+        let isSubmitting = false; 
+        let isManualStop = false; // ★重要：ユーザーが手動で止めたかを判定するフラグ
 
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             statusSpan.innerText = "❌ ブラウザが音声認識に対応していません。Google Chromeを使用してください。";
@@ -80,9 +82,16 @@ def hands_free_speech_component():
 
             micBtn.addEventListener('click', () => {
                 if (!isListening) {
+                    isManualStop = false; // 起動時は手動停止フラグをリセット
                     try { recognition.start(); } catch(e) {}
                 } else {
+                    isManualStop = true; // ★手動で終了ボタンを押したことを記録
                     recognition.stop();
+                    
+                    // すぐにボタンを緑色（停止状態）に戻す
+                    statusSpan.innerText = "状態: 停止中";
+                    micBtn.innerText = "🟢 ハンズフリーモードを起動";
+                    micBtn.style.backgroundColor = "#2e7d32";
                 }
             });
 
@@ -96,7 +105,6 @@ def hands_free_speech_component():
             recognition.onresult = (event) => {
                 if (isSubmitting) return; 
 
-                // ★重要：ロボットが発話中の場合は自分の声を無視する（セグフォ対策）
                 const targetWindow = window.parent || window;
                 if (targetWindow.isRobotSpeaking) {
                     return;
@@ -124,7 +132,6 @@ def hands_free_speech_component():
                                 sendBtn.removeAttribute('disabled');
                                 sendBtn.click(); 
                             }
-                            // 送信後2秒間は認識をブロックし、サーバーへの過負荷を防ぐ
                             setTimeout(() => { isSubmitting = false; }, 2000);
                         }, 150);
                     } else {
@@ -144,18 +151,14 @@ def hands_free_speech_component():
 
             recognition.onend = () => {
                 isListening = false;
-                if (micBtn.style.backgroundColor === "rgb(211, 47, 47)") { 
+                // ★手動で終了ボタンを押した「以外」の場合のみ自動再起動する
+                if (!isManualStop) {
                     setTimeout(() => { try { recognition.start(); } catch(e){} }, 500);
-                } else {
-                    statusSpan.innerText = "状態: 停止中";
-                    micBtn.innerText = "🟢 ハンズフリーモードを起動";
-                    micBtn.style.backgroundColor = "#2e7d32";
                 }
             };
         }
     </script>
     """
-    # 状態を維持するためiframeは残す
     st.components.v1.html(html_code, height=140)
 
 # --- 🧠 自然言語処理：意図解釈（インテント識別）エンジン ---
