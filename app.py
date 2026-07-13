@@ -1,13 +1,15 @@
 import streamlit as st
+import json
+import os
 
 # ページ全体のデザイン設定
 st.set_page_config(
     page_title="次世代対話型自炊サポートロボット「ココ」",
-    page_icon="🍳",
+    page_icon="🤖",
     layout="wide"
 )
 
-# 🍳 ロボットの発話（音声合成）用のJavaScript
+# 🤖 ロボットの発話（音声合成）用のJavaScript
 def robot_speak(text):
     if text:
         safe_text = text.replace('\n', ' ').replace('\r', '').replace("'", "\\'")
@@ -175,39 +177,20 @@ def parse_user_intent(user_message):
         
     return "CHAT_OR_QUESTION"
 
-# --- 📚 レシピデータセット（外部データ組み込みに向けたプロトタイプ） ---
-MOCK_RECIPE_DB = [
-    {
-        "name": "豚肉と玉ねぎの生姜焼き",
-        "ingredients": ["豚肉", "玉ねぎ"],
-        "condiments": {"醤油": "2.0", "みりん": "1.0", "酒": "1.0", "生姜チューブ": "0.5"},
-        "steps": [
-            "ステップ1：玉ねぎを薄切りにするよ。終わったら教えてね。",
-            "ステップ2：フライパンに油をひいて、豚肉と玉ねぎを中火で炒めよう。火が通ったら次へ！",
-            "ステップ3：左の調味料を全部入れて、タレが絡んだら完成だよ！"
-        ]
-    },
-    {
-        "name": "豚肉と人参のオイスター炒め",
-        "ingredients": ["豚肉", "人参"],
-        "condiments": {"オイスターソース": "1.0", "醤油": "1.0", "酒": "1.0"},
-        "steps": [
-            "ステップ1：人参を細切りにするよ。できたら教えて！",
-            "ステップ2：フライパンで豚肉と人参を炒めよう。豚肉の色が変わったら次へ！",
-            "ステップ3：調味料を入れてサッと炒め合わせたら完成！"
-        ]
-    },
-    {
-        "name": "玉ねぎと人参のコンソメスープ",
-        "ingredients": ["玉ねぎ", "人参"],
-        "condiments": {"水": "300", "コンソメ": "1.0", "塩こしょう": "0.1"},
-        "steps": [
-            "ステップ1：玉ねぎと人参を角切りにしよう。できたら教えてね。",
-            "ステップ2：鍋に水を入れて沸騰させ、切った野菜を入れて中火で煮込むよ。柔らかくなったら次へ！",
-            "ステップ3：コンソメと塩こしょうで味を整えたら完成だよ！"
-        ]
-    }
-]
+# --- 📚 外部レシピデータセットの読み込み ---
+# st.cache_dataをつけることで、ファイル読み込みを1回だけに留めてアプリを高速化します
+@st.cache_data
+def load_recipe_db():
+    file_path = "recipes.json"
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    else:
+        # JSONファイルが見つからない時のための保険用データ
+        return []
+
+# アプリ起動時にデータを読み込む
+RECIPE_DB = load_recipe_db()
 
 # --- 🍳 ドメイン知識：データセットからレシピを検索 ---
 def generate_intelligent_recipes(ingredients_list):
@@ -216,7 +199,8 @@ def generate_intelligent_recipes(ingredients_list):
         
     recipes = {}
     
-    for recipe in MOCK_RECIPE_DB:
+    # 外部から読み込んだ RECIPE_DB を使って検索
+    for recipe in RECIPE_DB:
         match_count = sum(1 for ing in recipe["ingredients"] if ing in ingredients_list)
         
         if match_count > 0:
@@ -244,7 +228,7 @@ if 'generated_recipes' not in st.session_state:
 if 'suggested_options' not in st.session_state:
     st.session_state['suggested_options'] = []
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！データセット検索エンジンを組み込んだよ。「豚肉」「玉ねぎ」「人参」などで検索してみて！"}]
+    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！外部のJSONデータセットと連携したよ。「豚肉」「玉ねぎ」などで検索してみてね。"}]
 if 'current_step' not in st.session_state:
     st.session_state['current_step'] = -1  
 if 'calculated' not in st.session_state:
