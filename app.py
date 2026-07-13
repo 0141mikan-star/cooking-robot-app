@@ -259,7 +259,7 @@ with col_left:
             proposal_msg = "もっち、食材を解析したよ！新しく追加された食材の調理特性に合わせて手順を組んだからね。下のリストから選んで！"
             st.session_state['chat_history'].append({"role": "assistant", "content": proposal_msg})
             st.session_state['latest_reply'] = proposal_msg
-            st.rerun()
+    
 
     st.markdown("---")
     st.markdown("**【手順C】提案された選択肢から料理を選んで最適化する**")
@@ -277,7 +277,7 @@ with col_left:
             init_msg = f"【{selected_recipe}】の最適化が完了したよ！右側のハンズフリーを起動して、自由な言葉で話しかけてね！"
             st.session_state['chat_history'].append({"role": "assistant", "content": init_msg})
             st.session_state['latest_reply'] = init_msg
-            st.rerun()
+    
 
     if st.session_state['calculated'] and 'current_recipe_data' in st.session_state:
         st.markdown("---")
@@ -347,7 +347,6 @@ with col_right:
                 
         st.session_state['chat_history'].append({"role": "assistant", "content": reply})
         st.session_state['latest_reply'] = reply  
-        st.rerun()  
 
     with chat_placeholder:
         for message in st.session_state['chat_history']:
