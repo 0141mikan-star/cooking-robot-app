@@ -28,10 +28,9 @@ def robot_speak(text):
             }}
         </script>
         """
-        # 動いていた頃の方式に復元
         st.components.v1.html(js_code, height=0, width=0)
 
-# 🎙️ ハンズフリー音声認識用コンポーネント（完全復元＋ループ対策版）
+# 🎙️ ハンズフリー音声認識用コンポーネント
 def hands_free_speech_component():
     html_code = """
     <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
@@ -155,7 +154,6 @@ def hands_free_speech_component():
         }
     </script>
     """
-    # 確実に関数が実行されるように復元
     st.components.v1.html(html_code, height=140)
 
 # --- 🧠 自然言語処理：意図解釈（インテント識別）エンジン ---
@@ -177,47 +175,67 @@ def parse_user_intent(user_message):
         
     return "CHAT_OR_QUESTION"
 
-# --- 🍳 ドメイン知識：食材の特性（調理の常識）を考慮した動的レシピ生成 ---
+# --- 📚 レシピデータセット（外部データ組み込みに向けたプロトタイプ） ---
+MOCK_RECIPE_DB = [
+    {
+        "name": "豚肉と玉ねぎの生姜焼き",
+        "ingredients": ["豚肉", "玉ねぎ"],
+        "condiments": {"醤油": "2.0", "みりん": "1.0", "酒": "1.0", "生姜チューブ": "0.5"},
+        "steps": [
+            "ステップ1：玉ねぎを薄切りにするよ。終わったら教えてね。",
+            "ステップ2：フライパンに油をひいて、豚肉と玉ねぎを中火で炒めよう。火が通ったら次へ！",
+            "ステップ3：左の調味料を全部入れて、タレが絡んだら完成だよ！"
+        ]
+    },
+    {
+        "name": "豚肉と人参のオイスター炒め",
+        "ingredients": ["豚肉", "人参"],
+        "condiments": {"オイスターソース": "1.0", "醤油": "1.0", "酒": "1.0"},
+        "steps": [
+            "ステップ1：人参を細切りにするよ。できたら教えて！",
+            "ステップ2：フライパンで豚肉と人参を炒めよう。豚肉の色が変わったら次へ！",
+            "ステップ3：調味料を入れてサッと炒め合わせたら完成！"
+        ]
+    },
+    {
+        "name": "玉ねぎと人参のコンソメスープ",
+        "ingredients": ["玉ねぎ", "人参"],
+        "condiments": {"水": "300", "コンソメ": "1.0", "塩こしょう": "0.1"},
+        "steps": [
+            "ステップ1：玉ねぎと人参を角切りにしよう。できたら教えてね。",
+            "ステップ2：鍋に水を入れて沸騰させ、切った野菜を入れて中火で煮込むよ。柔らかくなったら次へ！",
+            "ステップ3：コンソメと塩こしょうで味を整えたら完成だよ！"
+        ]
+    }
+]
+
+# --- 🍳 ドメイン知識：データセットからレシピを検索 ---
 def generate_intelligent_recipes(ingredients_list):
     if not ingredients_list:
         return {}
         
-    main_item = ingredients_list[0]
-    sub_items_clean = "、".join(ingredients_list[1:]) if len(ingredients_list) > 1 else main_item
-    
-    has_egg = any("卵" in item for item in ingredients_list)
     recipes = {}
     
-    r1_name = f"🍳 AI特製：{main_item}のおかずスタミナ炒め"
-    if has_egg:
-        r1_steps = [
-            f"ステップ1：まずは卵の処理からいくよ！フライパンに油を強火で熱して、溶いた卵を一気に入れよう。半熟状になったら、一度お皿に取り出してね。できたら教えて！",
-            f"ステップ2：同じフライパンで【{main_item}】と【{sub_items_clean}】（卵以外）を中火でしっかり炒めていこう。炒め終わったら次何するか聞いてね。",
-            f"ステップ3：最後に、最初に取り出した半熟卵をフライパンに戻し、左に表示されている最適化調味料を入れてサッと全体を合わせたら完成だよ！これなら卵が固くならないよ！"
-        ]
-    else:
-        r1_steps = [
-            f"ステップ1：フライパンに油をひいて、まずは火の通りにくい【{main_item}】を中火で炒めよう！終わったら教えてね。",
-            f"ステップ2：次に残りの具材【{sub_items_clean}】を投入して、全体に火が通るまで炒めるよ。できたら次！",
-            f"ステップ3：仕上げに、左に表示されている最適化されたタレを一気に回し入れて、強火でサッと絡めたら完成だよ！"
-        ]
-    recipes[r1_name] = {"condiments": {"醤油": "2.0", "みりん": "1.0", "酒": "1.0", "砂糖": "0.5"}, "steps": r1_steps}
-    
-    r2_name = f"🍲 AI特製：あったか{main_item}のとろみ中華スープ煮"
-    if has_egg:
-        r2_steps = [
-            f"ステップ1：鍋に【お水と鶏ガラスープの素】を入れて沸騰させよう。その間に【{main_item}】などの具材を一口大に切ってね。できたら教えて！",
-            f"ステップ2：鍋に切った具材（※卵はまだ入れちゃダメだよ！）を入れて、中火でコトコト煮込むよ。煮込み終わったら次へ進もう。",
-            f"ステップ3：ここがココの常識ロジック！火を止める直前に、溶き卵をスープの表面に円を描くように細く回し入れよう。卵がふわっと浮いてきたら完成だよ！"
-        ]
-    else:
-        r2_steps = [
-            f"ステップ1：鍋に水とスープの素を入れて沸騰させよう。その間に具材を食べやすい大きさに切ってね。できたら教えて！",
-            f"ステップ2：鍋に【{main_item}】などの具材を入れて、全体が柔らかくなるまで中火でコトコト煮込もう。終わったら次へ進むよ。",
-            f"ステップ3：最後に味付けをして、全体に味が馴染んだら完成だよ！"
-        ]
-    recipes[r2_name] = {"condiments": {"お水": "300.0", "鶏ガラスープの素": "1.5", "醤油": "0.5", "ごま油": "0.5"}, "steps": r2_steps}
-    
+    for recipe in MOCK_RECIPE_DB:
+        match_count = sum(1 for ing in recipe["ingredients"] if ing in ingredients_list)
+        
+        if match_count > 0:
+            recipes[recipe["name"]] = {
+                "condiments": recipe["condiments"],
+                "steps": recipe["steps"]
+            }
+            
+    if not recipes:
+        main_item = ingredients_list[0]
+        recipes[f"AI特製：{main_item}のシンプル炒め"] = {
+            "condiments": {"塩": "0.5", "こしょう": "0.2", "油": "1.0"},
+            "steps": [
+                f"ステップ1：まずは【{main_item}】を食べやすい大きさに切ろう！",
+                "ステップ2：フライパンを中火で熱して、しっかり火を通すよ。できたら教えてね。",
+                "ステップ3：塩こしょうで味を整えたら完成だよ！"
+            ]
+        }
+        
     return recipes
 
 # --- セッション状態の初期化 ---
@@ -226,7 +244,7 @@ if 'generated_recipes' not in st.session_state:
 if 'suggested_options' not in st.session_state:
     st.session_state['suggested_options'] = []
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、ごめんね！グラムも個数もちゃんと入れられるように修正したよ！ハンズフリーも元通りに動くはず！"}]
+    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！データセット検索エンジンを組み込んだよ。「豚肉」「玉ねぎ」「人参」などで検索してみて！"}]
 if 'current_step' not in st.session_state:
     st.session_state['current_step'] = -1  
 if 'calculated' not in st.session_state:
@@ -248,7 +266,6 @@ with col_left:
     st.subheader("📥 1. 冷蔵庫の食材入力 ＆ AI複数提案")
     st.markdown("**【手順A】手持ちの食材を入力する**")
     
-    # 🌟新機能：クラッシュしない安全な「カスタム食材入力欄」
     if "ingredients" not in st.session_state:
         st.session_state.ingredients = [
             {"name": "豚肉", "amount": 120.0, "unit": "g"},
@@ -256,12 +273,10 @@ with col_left:
             {"name": "人参", "amount": 0.3, "unit": "本"}
         ]
 
-    # 食材を追加するボタン
     if st.button("➕ 食材を追加する"):
         st.session_state.ingredients.append({"name": "", "amount": 0.0, "unit": ""})
         st.rerun()
 
-    # ヘッダーの表示
     h_col1, h_col2, h_col3 = st.columns([3, 2, 2])
     h_col1.markdown("**食材名**")
     h_col2.markdown("**量**")
@@ -283,9 +298,7 @@ with col_left:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 手順B: 提案実行ボタン
     if st.button("🔍 【手順B】この食材から料理を複数提案してもらう", type="secondary"):
-        # 食材名だけを抽出してリスト化
         ingredients_list = [ing["name"].strip() for ing in st.session_state.ingredients if ing["name"].strip() != ""]
         
         if not ingredients_list:
@@ -296,7 +309,7 @@ with col_left:
             st.session_state['suggested_options'] = list(recipes_result.keys())
             st.session_state['calculated'] = False  
             
-            proposal_msg = "もっち、食材を解析したよ！新しく追加された食材の調理特性に合わせて手順を組んだからね。下のリストから選んで！"
+            proposal_msg = "もっち、データベースからレシピを検索したよ！下のリストから選んで！"
             st.session_state['chat_history'].append({"role": "assistant", "content": proposal_msg})
             st.session_state['latest_reply'] = proposal_msg
 
@@ -358,7 +371,7 @@ with col_right:
                     next_step = st.session_state['current_step']
                     reply = f"はーい、次だね。{steps[next_step]}"
                 elif current == len(steps) - 1:
-                    reply = "これで全工程が完了だよ！ココの言う通りにやったら卵もフワフワで大成功のはず！お疲れ様！🎉"
+                    reply = "これで全工程が完了だよ！お疲れ様！🎉"
                     st.session_state['current_step'] = -2  
                 else:
                     reply = "調理は完了しているよ！新しく作るときはもう一度左側から計算してね。"
@@ -376,8 +389,6 @@ with col_right:
             else:
                 if "火" in user_message or "火力" in user_message:
                     reply = "基本的には中火で大丈夫だよ！焦げそうだったら少し弱めて、ココに『次』って教えてね。"
-                elif "卵" in user_message:
-                    reply = "そうそう、卵は固まりやすいからココの指示のタイミング通りに入れるのが一番美味しくなるよ！"
                 else:
                     reply = "なるほど！もっち、料理中のその調子だよ。次の工程に進むときは『終わったよ』とか『次は何？』って話しかけてね。"
                 
