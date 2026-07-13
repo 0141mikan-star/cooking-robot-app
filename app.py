@@ -1,24 +1,3 @@
-また落ちてしまいましたね。ログの共有ありがとうございます！一連のエラーの根本原因が完全に特定できました。
-
-ログにある `Segmentation fault`（セグメンテーションフォールト）は、Pythonのコードの書き間違いではなく、**Streamlitが動いているサーバー側のメモリやシステムの致命的なクラッシュ**を意味します。今回の引き金になっていたのは以下の2点です。
-
-### 1. 廃止された機能（コンポーネント）によるシステムクラッシュ
-
-ログに `Please replace st.components.v1.html...` と出ている通り、音声認識と発話で使っていた古いHTML描画システムが2026年6月以降のバージョンでサポート外となり、これが裏側でブラウザと通信する際にシステムを巻き込んでクラッシュさせていました。
-
-* **対策:** 最新仕様である `st.html()` 関数にすべて書き換えました。
-
-### 2. PyArrow（データエディタの裏側）のメモリ衝突
-
-Streamlit Cloudでよく起きるバグです。左側の食材入力欄（`st.data_editor`）を表示する際、画面が更新されるたびに毎回新しいデータを無理やり上書きしようとして、裏側のメモリ管理（PyArrow）が耐えきれずに破綻（Segmentation fault）を起こしていました。
-
-* **対策:** 初期データを `st.session_state` に一度だけ保存し、無駄なメモリ消費と衝突を完全に防ぎました。
-
----
-
-これでクラッシュ要因をすべて排除しました。以下のコードを丸ごとコピーして上書きしてください。
-
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -395,5 +374,3 @@ with col_right:
     if st.session_state['latest_reply']:
         robot_speak(st.session_state['latest_reply'])
         st.session_state['latest_reply'] = None
-
-```
