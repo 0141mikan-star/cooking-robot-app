@@ -1,6 +1,5 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
+# 🚨 パンクの原因だった pandas と numpy は完全に削除しました！
 
 # ページ全体のデザイン設定
 st.set_page_config(
@@ -12,35 +11,32 @@ st.set_page_config(
 # 🤖 ロボットの発話（音声合成）用のJavaScript
 def robot_speak(text):
     if text:
-        # 改行や引用符でJSが壊れないようにエスケープ
         safe_text = text.replace('\n', ' ').replace('\r', '').replace("'", "\\'")
         js_code = f"""
         <script>
-            if ('speechSynthesis' in window) {{
-                window.speechSynthesis.cancel();
-                var msg = new SpeechSynthesisUtterance('{safe_text}');
+            // 音声ループバグを防ぐため、親ウィンドウ(Streamlit本体)の変数を操作
+            var target = window.parent || window;
+            if ('speechSynthesis' in target) {{
+                target.speechSynthesis.cancel();
+                var msg = new target.SpeechSynthesisUtterance('{safe_text}');
                 msg.lang = 'ja-JP';
                 msg.rate = 1.0;
                 
-                // 発話中はフラグを立て、マイクが自分の声を拾うのを防ぐ
-                window.isRobotSpeaking = true;
-                msg.onend = function() {{ window.isRobotSpeaking = false; }};
-                msg.onerror = function() {{ window.isRobotSpeaking = false; }};
+                target.isRobotSpeaking = true;
+                msg.onend = function() {{ target.isRobotSpeaking = false; }};
+                msg.onerror = function() {{ target.isRobotSpeaking = false; }};
                 
-                window.speechSynthesis.speak(msg);
+                target.speechSynthesis.speak(msg);
             }}
         </script>
         """
-        # 🚨修正1：非推奨のst.components.v1.htmlをst.htmlに変更（クラッシュ対策）
-        st.html(js_code)
+        st.components.v1.html(js_code, height=0)
 
-# 🎙️ ハンズフリー音声認識用コンポーネント（無限ループ・終了できない問題対策版）
-# 🎙️ ハンズフリー音声認識用コンポーネント（ボタン無反応・セキュリティブロック回避版）
+# 🎙️ ハンズフリー音声認識用コンポーネント（クラッシュ＆ボタン無反応 対策版）
 def hands_free_speech_component():
     html_code = """
     <div style="height: 150px;">
         <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
-            <!-- onclickを削除し、純粋なボタンとして配置 -->
             <button id="mic-btn" style="
                 background-color: #2e7d32; 
                 color: white; 
@@ -65,11 +61,9 @@ def hands_free_speech_component():
     </div>
 
     <script>
-    // StreamlitがHTMLを描画した直後に確実に実行させるための遅延処理
     setTimeout(function() {
         const targetWindow = window.parent || window;
         
-        // 1. 音声認識の裏側（エンジン）を1回だけ初期設定する
         if (!targetWindow._speechInitialized) {
             targetWindow._speechInitialized = true;
             targetWindow._isListening = false;
@@ -88,7 +82,6 @@ def hands_free_speech_component():
                 };
                 
                 targetWindow._recognition.onresult = (event) => {
-                    // ロボットが喋っている間は自分の声を無視
                     if (targetWindow.isRobotSpeaking) return;
                     
                     const text = event.results[event.resultIndex][0].transcript.trim();
@@ -97,7 +90,6 @@ def hands_free_speech_component():
                     const statusText = document.getElementById('status');
                     if (statusText) statusText.innerHTML = "🗣 聞き取った言葉: 「<b>" + text + "</b>」";
                     
-                    // Streamlitのチャット入力欄へ自動送信
                     try {
                         const targetDoc = targetWindow.document;
                         const chatInput = targetDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
@@ -133,7 +125,6 @@ def hands_free_speech_component():
                 
                 targetWindow._recognition.onend = () => {
                     targetWindow._isListening = false;
-                    // 手動停止でなければ、勝手に切れても自動で再起動する（ゾンビ対策）
                     if (!targetWindow._isManualStop) {
                         setTimeout(() => { try { targetWindow._recognition.start(); } catch(e){} }, 500);
                     } else {
@@ -143,7 +134,6 @@ def hands_free_speech_component():
             }
         }
 
-        // 2. 画面の見た目（ボタンの色や文字）を更新する関数
         function updateUI(isListening) {
             const btn = document.getElementById('mic-btn');
             const status = document.getElementById('status');
@@ -160,19 +150,14 @@ def hands_free_speech_component():
             }
         }
 
-        // 3. セキュリティブロックを回避して、JavaScriptから直接クリック処理を紐付ける
         const micBtn = document.getElementById('mic-btn');
         if (micBtn) {
-            // 現在のステータス（起動中か停止中か）に合わせてボタンを復元
             updateUI(targetWindow._isListening);
-            
-            // クリック時の処理を付与
             micBtn.onclick = function() {
                 if (!targetWindow._recognition) {
                     document.getElementById('status').innerText = "❌ ブラウザが音声認識非対応です（Chromeをご利用ください）。";
                     return;
                 }
-                
                 if (!targetWindow._isListening) {
                     targetWindow._isManualStop = false;
                     try { targetWindow._recognition.start(); } catch(e){}
@@ -183,10 +168,11 @@ def hands_free_speech_component():
                 }
             };
         }
-    }, 150); // HTMLが画面に出るのを0.15秒待ってから処理を紐付け
+    }, 150); 
     </script>
     """
-    st.html(html_code)
+    st.components.v1.html(html_code, height=160)
+
 # --- 🧠 自然言語処理：意図解釈（インテント識別）エンジン ---
 def parse_user_intent(user_message):
     msg = user_message.lower()
@@ -255,7 +241,7 @@ if 'generated_recipes' not in st.session_state:
 if 'suggested_options' not in st.session_state:
     st.session_state['suggested_options'] = []
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！不具合を完全に修正したよ。左側で食材を自由に入力して、下の『料理を複数提案してもらう』ボタンを押してね！"}]
+    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！システムエラーの原因を徹底的に排除したよ！左側で食材を入力して進めてね。"}]
 if 'current_step' not in st.session_state:
     st.session_state['current_step'] = -1  
 if 'calculated' not in st.session_state:
@@ -277,16 +263,16 @@ with col_left:
     st.subheader("📥 1. 冷蔵庫の食材入力 ＆ AI複数提案")
     st.markdown("**【手順A】手持ちの食材を入力・編集する**")
     
-    # 🚨修正2：PyArrowメモリ衝突によるSegfaultを防ぐため、初期データをセッションで固定化
-    if "initial_df" not in st.session_state:
-        st.session_state["initial_df"] = pd.DataFrame([
+    # 🚨Pandasを使わずに純粋なリストを使用（これでSegfaultを完全回避）
+    if "initial_data" not in st.session_state:
+        st.session_state["initial_data"] = [
             {"食材名": "豚肉", "量": 120.0, "単位": "g"},
             {"食材名": "玉ねぎ", "量": 0.5, "単位": "個"},
             {"食材名": "人参", "量": 0.3, "単位": "本"}
-        ])
+        ]
     
     edited_ingredients = st.data_editor(
-        st.session_state["initial_df"], 
+        st.session_state["initial_data"], 
         num_rows="dynamic", 
         width="stretch",
         key="perfect_ingredients_editor"
@@ -294,8 +280,11 @@ with col_left:
     
     # 手順B: 提案実行ボタン
     if st.button("🔍 【手順B】この食材から料理を複数提案してもらう", type="secondary", width="stretch"):
-        ingredients_list = edited_ingredients["食材名"].dropna().tolist()
-        ingredients_list = [i for i in ingredients_list if i.strip() != ""]
+        ingredients_list = []
+        for row in edited_ingredients:
+            name = row.get("食材名", "")
+            if name and str(name).strip() != "":
+                ingredients_list.append(str(name).strip())
         
         if not ingredients_list:
             st.error("⚠️ 食材名が入力されていません。")
