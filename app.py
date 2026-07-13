@@ -1,5 +1,4 @@
 import streamlit as st
-# 🚨 パンクの原因だった pandas と numpy は完全に削除しました！
 
 # ページ全体のデザイン設定
 st.set_page_config(
@@ -8,13 +7,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# 🤖 ロボットの発話（音声合成）用のJavaScript
+# 🤖 ロボットの発話（音声合成）
 def robot_speak(text):
     if text:
         safe_text = text.replace('\n', ' ').replace('\r', '').replace("'", "\\'")
         js_code = f"""
         <script>
-            // 音声ループバグを防ぐため、親ウィンドウ(Streamlit本体)の変数を操作
             var target = window.parent || window;
             if ('speechSynthesis' in target) {{
                 target.speechSynthesis.cancel();
@@ -30,33 +28,32 @@ def robot_speak(text):
             }}
         </script>
         """
-        st.components.v1.html(js_code, height=0)
+        # 🚨修正1：廃止されたコンポーネントを使わず、最新の st.html() を使用
+        st.html(js_code)
 
-# 🎙️ ハンズフリー音声認識用コンポーネント（クラッシュ＆ボタン無反応 対策版）
+# 🎙️ ハンズフリー音声認識
 def hands_free_speech_component():
     html_code = """
-    <div style="height: 150px;">
-        <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
-            <button id="mic-btn" style="
-                background-color: #2e7d32; 
-                color: white; 
-                border: none; 
-                padding: 14px 28px; 
-                border-radius: 24px; 
-                cursor: pointer;
-                font-weight: bold;
-                font-size: 16px;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                width: 100%;
-                justify-content: center;
-            ">
-                🟢 ハンズフリーモードを起動（料理前に1回クリック）
-            </button>
-            <div id="status" style="font-size: 14px; color: #1b5e20; margin-top: 10px; font-weight: bold; text-align: center;">
-                状態: 停止中
-            </div>
+    <div style="margin-bottom: 15px; padding: 15px; border-radius: 12px; background-color: #f0f8f5; border: 2px solid #2e7d32;">
+        <button id="mic-btn" style="
+            background-color: #2e7d32; 
+            color: white; 
+            border: none; 
+            padding: 14px 28px; 
+            border-radius: 24px; 
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            justify-content: center;
+        ">
+            🟢 ハンズフリーモードを起動（料理前に1回クリック）
+        </button>
+        <div id="status" style="font-size: 14px; color: #1b5e20; margin-top: 10px; font-weight: bold; text-align: center;">
+            状態: 停止中
         </div>
     </div>
 
@@ -171,7 +168,8 @@ def hands_free_speech_component():
     }, 150); 
     </script>
     """
-    st.components.v1.html(html_code, height=160)
+    # 🚨修正1：廃止されたコンポーネントを使わず、最新の st.html() を使用
+    st.html(html_code)
 
 # --- 🧠 自然言語処理：意図解釈（インテント識別）エンジン ---
 def parse_user_intent(user_message):
@@ -241,7 +239,7 @@ if 'generated_recipes' not in st.session_state:
 if 'suggested_options' not in st.session_state:
     st.session_state['suggested_options'] = []
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！システムエラーの原因を徹底的に排除したよ！左側で食材を入力して進めてね。"}]
+    st.session_state['chat_history'] = [{"role": "assistant", "content": "もっち、こんにちは！不具合の原因だった表機能を完全に無くしたから、これで落ちないはずだよ！左側に食材を入力してね。"}]
 if 'current_step' not in st.session_state:
     st.session_state['current_step'] = -1  
 if 'calculated' not in st.session_state:
@@ -261,30 +259,20 @@ col_left, col_right = st.columns([1, 1.2])
 # 【左カラム】食材入力
 with col_left:
     st.subheader("📥 1. 冷蔵庫の食材入力 ＆ AI複数提案")
-    st.markdown("**【手順A】手持ちの食材を入力・編集する**")
+    st.markdown("**【手順A】手持ちの食材を入力する**")
     
-    # 🚨Pandasを使わずに純粋なリストを使用（これでSegfaultを完全回避）
-    if "initial_data" not in st.session_state:
-        st.session_state["initial_data"] = [
-            {"食材名": "豚肉", "量": 120.0, "単位": "g"},
-            {"食材名": "玉ねぎ", "量": 0.5, "単位": "個"},
-            {"食材名": "人参", "量": 0.3, "単位": "本"}
-        ]
-    
-    edited_ingredients = st.data_editor(
-        st.session_state["initial_data"], 
-        num_rows="dynamic", 
-        width="stretch",
-        key="perfect_ingredients_editor"
+    # 🚨修正2：クラッシュの元凶である表を廃止し、安全なテキスト入力に変更
+    ingredients_input = st.text_area(
+        "冷蔵庫にある食材を「、」や「,」で区切って入力してね",
+        value="豚肉、玉ねぎ、人参",
+        height=100
     )
     
     # 手順B: 提案実行ボタン
-    if st.button("🔍 【手順B】この食材から料理を複数提案してもらう", type="secondary", width="stretch"):
-        ingredients_list = []
-        for row in edited_ingredients:
-            name = row.get("食材名", "")
-            if name and str(name).strip() != "":
-                ingredients_list.append(str(name).strip())
+    if st.button("🔍 【手順B】この食材から料理を複数提案してもらう"):
+        # テキストを解析してリストに変換
+        raw_list = ingredients_input.replace(',', '、').split('、')
+        ingredients_list = [i.strip() for i in raw_list if i.strip() != ""]
         
         if not ingredients_list:
             st.error("⚠️ 食材名が入力されていません。")
@@ -302,7 +290,7 @@ with col_left:
     st.markdown("**【手順C】提案された選択肢から料理を選んで最適化する**")
     selected_recipe = st.selectbox("ココのおススメ料理選択肢", st.session_state['suggested_options'])
     
-    if st.button("✨ 【手順D】この料理の調味料比率を計算する", type="primary", width="stretch"):
+    if st.button("✨ 【手順D】この料理の調味料比率を計算する"):
         if not selected_recipe:
             st.error("⚠️ まずは【手順B】のボタンを押してね！")
         else:
